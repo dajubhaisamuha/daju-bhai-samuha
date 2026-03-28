@@ -725,21 +725,30 @@ const NepaliDate = {
     try{
       const d=new Date(adDate);
       let dy=d.getFullYear(),dm=d.getMonth()+1,dd=d.getDate();
+      // Count total days from 1944 AD
       let totalDays=0;
       for(let y=1944;y<dy;y++) totalDays+=(y%4===0&&(y%100!==0||y%400===0))?366:365;
       const mD=[0,31,28,31,30,31,30,31,31,30,31,30,31];
       if(dy%4===0&&(dy%100!==0||dy%400===0))mD[2]=29;
       for(let m=1;m<dm;m++) totalDays+=mD[m];
-      totalDays+=dd-135;
+      totalDays+=dd;
+      // 1944 Jan 1 = 2000 Baisakh 17 = day 135 of 2000 BS
+      // Subtract days before 2000 BS start
+      totalDays-=135;
       let bY=2000,bM=1,bD=1;
-      while(totalDays>0){
-        const days=this.bs[bY-1999][bM];
+      let safety=0;
+      while(totalDays>0&&safety<1500){
+        safety++;
+        const idx=bY-1999;
+        if(idx<1||idx>=this.bs.length){break;}
+        const days=this.bs[idx][bM];
+        if(!days)break;
         if(totalDays<=days){bD=totalDays;totalDays=0;}
         else{totalDays-=days;bM++;if(bM>12){bM=1;bY++;}}
       }
       const dayName=this.days[d.getDay()];
       return {y:bY,m:bM,d:bD,str:this.toNep(bY)+' '+this.months[bM-1]+' '+this.toNep(bD),day:dayName};
-    }catch(e){return {y:0,m:0,d:0,str:'--',day:'--'};}
+    }catch(e){return {y:2082,m:1,d:1,str:'२०८२ बैशाख १',day:'--'};}
   }
 };
 
@@ -750,13 +759,23 @@ function fmtTime(d){if(!d)return '';return d.toLocaleString('en-NP',{month:'shor
 
 // Real-time clock
 function updateClock(){
-  const now=new Date();
-  const np=todayNepali();
-  const el=document.getElementById('nepaliDateTop');
-  const t=now.toLocaleTimeString('en-NP',{hour:'2-digit',minute:'2-digit'});
-  if(el) el.textContent=np.str+' • '+np.day+' • '+t;
+  try{
+    const now=new Date();
+    const np=NepaliDate.convert(now);
+    const el=document.getElementById('nepaliDateTop');
+    const h=String(now.getHours()).padStart(2,'0');
+    const m=String(now.getMinutes()).padStart(2,'0');
+    const s=String(now.getSeconds()).padStart(2,'0');
+    const t=h+':'+m+':'+s;
+    if(el) el.textContent=(np.str||'--')+' • '+(np.day||'--')+' • '+t;
+  }catch(e){
+    const el=document.getElementById('nepaliDateTop');
+    if(el) el.textContent=new Date().toLocaleTimeString();
+  }
 }
-setInterval(updateClock,1000);
+// Start clock
+setInterval(updateClock, 1000);
+updateClock();
 
 // Date modal
 function openDateModal(){
