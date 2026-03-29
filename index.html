@@ -576,6 +576,8 @@ td{padding:11px 14px;color:var(--text);vertical-align:middle}
         </div>
         <div class="topActions">
           <button class="iconBtn" onclick="openDateModal()" title="Date Converter">📅</button>
+          <button class="iconBtn" onclick="toggleLang()" id="langBtn" title="Language">अ</button>
+          <button class="iconBtn" onclick="exportAllDataExcel()" title="Backup">📊</button>
           <button class="iconBtn" id="darkBtn" onclick="toggleDark()" title="Theme">🌙</button>
           <div style="position:relative">
             <button class="iconBtn" onclick="toggleNotif()" id="notifBtn">
@@ -810,6 +812,56 @@ function convertBStoAD(){
   el.textContent='📅 '+adYF+'-'+String(adM).padStart(2,'0')+'-'+String(bD).padStart(2,'0')+' (AD approx)';
 }
 
+// ====== ACTIVITY LOG ======
+async function logActivity(action, description, data={}){
+  try{
+    await db.collection('activityLog').add({
+      action, description, data,
+      uid: currentUser?.uid||'',
+      userName: currentUserData?.name||'',
+      dateBS: NepaliDate.convert(new Date()).str,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }catch(e){console.log('Activity log error:',e);}
+}
+
+// ====== EXCEL BACKUP ======
+async function exportAllDataExcel(){
+  try{
+    const [txSnap,loanSnap,savSnap,fineSnap,memberSnap]=await Promise.all([
+      db.collection('transactions').get(),
+      db.collection('loans').get(),
+      db.collection('savings').get(),
+      db.collection('fines').get(),
+      db.collection('users').where('role','==','member').get(),
+    ]);
+    // Build CSV content
+    let csv='=== DAJU-BHAI SAMUHA DATA BACKUP ===\n\n';
+    csv+='TRANSACTIONS\n';
+    csv+='Date BS,Type,Category,Member,Amount,Method,Note\n';
+    txSnap.docs.forEach(d=>{const t=d.data();csv+=`${t.dateBS||t.date||''},${t.type||''},${t.category||''},${t.memberName||''},${t.amount||0},${t.method||''},${t.note||''}\n`;});
+    csv+='\nLOANS\n';
+    csv+='Member,Amount,Remaining,Rate%,Status,IssueDate,DueDate\n';
+    loanSnap.docs.forEach(d=>{const l=d.data();csv+=`${l.memberName||''},${l.amount||0},${l.remaining||0},${l.rate||0},${l.status||''},${l.issueDate||''},${l.dueDate||''}\n`;});
+    csv+='\nSAVINGS\n';
+    csv+='Member,Amount,Date BS,Method,Note\n';
+    savSnap.docs.forEach(d=>{const s=d.data();csv+=`${s.memberName||''},${s.amount||0},${s.dateBS||s.date||''},${s.method||''},${s.note||''}\n`;});
+    csv+='\nFINES\n';
+    csv+='Member,Category,Amount,Reason,Date BS,Status,Paid By,Paid Date\n';
+    fineSnap.docs.forEach(d=>{const f=d.data();csv+=`${f.memberName||''},${f.category||'fine'},${f.amount||0},${f.reason||''},${f.dateBS||''},${f.status||''},${f.paidBy||''},${f.paidDateBS||''}\n`;});
+    csv+='\nMEMBERS\n';
+    csv+='Name,MemberID,Phone,Email,Joined BS,Status,Verified\n';
+    memberSnap.docs.forEach(d=>{const m=d.data();csv+=`${m.name||''},${m.memberId||''},${m.phone||''},${m.email||''},${m.joinDateNP||m.joinDate||''},${m.status||''},${m.verified?'Yes':'No'}\n`;});
+    // Download
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download='daju_bhai_backup_'+todayStr()+'.csv';a.click();
+    URL.revokeObjectURL(url);
+    toast('Data backup downloaded!');
+  }catch(e){toast('Backup error: '+e.message,'error');}
+}
+
 // ====== GLOBAL STATE ======
 let currentUser=null,currentUserData=null,currentPage='dashboard';
 let notifUnsub=null,chatUnsub=null;
@@ -840,6 +892,28 @@ function applyDark(){
 }
 function toggleDark(){isDark=!isDark;localStorage.setItem('darkMode',isDark?'1':'0');applyDark();}
 
+// Language Toggle
+let isNepali = localStorage.getItem('lang')==='np';
+const NP_LABELS = {
+  'Dashboard':'ड्यासबोर्ड','Announcements':'सूचना','Transactions':'कारोबार',
+  'Loans':'ऋण','Loan Requests':'ऋण निवेदन','Savings':'बचत',
+  'Fines & Dues':'जरिवाना','Bank Interest':'बैंक व्याज','Members':'सदस्य',
+  'Meetings':'बैठक','Reports':'रिपोर्ट','Group Chat':'समूह च्याट',
+  'Notifications':'सूचनाहरू','Login Logs':'लगइन लग','PIN Settings':'पिन सेटिङ',
+  'My Fees':'मेरो शुल्क','My Loans':'मेरो ऋण','Loan Request':'ऋण निवेदन',
+  'My Savings':'मेरो बचत','My Profile':'मेरो प्रोफाइल',
+};
+function toggleLang(){
+  isNepali=!isNepali;
+  localStorage.setItem('lang',isNepali?'np':'en');
+  const btn=document.getElementById('langBtn');
+  if(btn)btn.textContent=isNepali?'En':'अ';
+  // Re-render sidebar with new language
+  setupSidebar();
+  navigate(currentPage);
+}
+function getLabel(en){return isNepali&&NP_LABELS[en]?NP_LABELS[en]:en;}
+
 // ====== PIN SYSTEM ======
 function setupPin(){
   const pad=document.getElementById('pinPad');
@@ -861,6 +935,31 @@ function updatePinDots(){
 }
 function checkPin(){
   const saved=localStorage.getItem('appPin');
+  // Load member-wise summary
+  db.collection('users').where('role','==','member').get().then(mSnap=>{
+    const members=mSnap.docs.map(d=>({id:d.id,...d.data()}));
+    Promise.all(members.map(m=>Promise.all([
+      db.collection('savings').where('memberId','==',m.id).get().catch(()=>({docs:[]})),
+      db.collection('loans').where('memberId','==',m.id).get().catch(()=>({docs:[]})),
+      db.collection('fines').where('memberId','==',m.id).where('status','==','paid').get().catch(()=>({docs:[]})),
+    ]))).then(results=>{
+      const tbody=document.getElementById('memberSummaryBody');
+      if(!tbody)return;
+      tbody.innerHTML=members.map((m,i)=>{
+        const [sSnap,lSnap,fSnap]=results[i];
+        const totalSav=sSnap.docs.reduce((a,d)=>a+(d.data().amount||0),0);
+        const loanRem=lSnap.docs.filter(d=>d.data().status!=='paid').reduce((a,d)=>a+(d.data().remaining||0),0);
+        const finesPaid=fSnap.docs.reduce((a,d)=>a+(d.data().amount||0),0);
+        return`<tr>
+          <td style="font-weight:700">${m.name||'—'}</td>
+          <td style="color:#34d399;font-weight:700">${fmt(totalSav)}</td>
+          <td style="color:${loanRem>0?'#f87171':'#4ade80'};font-weight:700">${fmt(loanRem)}</td>
+          <td style="color:#fbbf24;font-weight:700">${fmt(finesPaid)}</td>
+        </tr>`;
+      }).join('');
+    });
+  });
+  
   setTimeout(()=>{
     if(!saved||pinInput===saved){
       document.getElementById('pinLock').style.display='none';
@@ -888,7 +987,17 @@ auth.onAuthStateChanged(async user=>{
     currentUser=user;
     await loadUserData(user.uid);
     showApp();
-    try{await db.collection('loginLogs').add({uid:user.uid,email:user.email,time:firebase.firestore.FieldValue.serverTimestamp()});}catch(e){}
+    try{
+      const bsDate=NepaliDate.convert(new Date()).str;
+      const device=navigator.userAgent.includes('Mobile')?'📱 Mobile':'💻 Desktop';
+      const browser=navigator.userAgent.includes('Chrome')?'Chrome':navigator.userAgent.includes('Firefox')?'Firefox':'Other';
+      await db.collection('loginLogs').add({
+        uid:user.uid,email:user.email,
+        dateBS:bsDate,device,browser,
+        platform:navigator.platform||'Unknown',
+        time:firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }catch(e){}
   } else showLogin();
 });
 
@@ -968,6 +1077,7 @@ const adminLinks=[
   {id:'notifications',icon:'🔔',label:'Notifications',badge:'notifSideBadge'},
   {id:'loginlogs',icon:'🕐',label:'Login Logs'},
   {id:'pinsettings',icon:'🔐',label:'PIN Settings'},
+  {id:'activitylog',icon:'📝',label:'Activity Log'},
 ];
 const memberLinks=[
   {id:'dashboard',icon:'📊',label:'Dashboard'},
@@ -981,6 +1091,7 @@ const memberLinks=[
   {id:'notifications',icon:'🔔',label:'Notifications',badge:'notifSideBadge'},
   {id:'profile',icon:'👤',label:'My Profile'},
   {id:'pinsettings',icon:'🔐',label:'PIN Settings'},
+  {id:'activitylog',icon:'📝',label:'Activity Log'},
 ];
 
 function setupSidebar(){
@@ -991,7 +1102,7 @@ function setupSidebar(){
   nav.innerHTML=links.map(l=>`
     <div class="navLink${currentPage===l.id?' active':''}" onclick="navigate('${l.id}')" id="nav-${l.id}">
       <span class="navIcon">${l.icon}</span>
-      <span>${l.label}</span>
+      <span>${getLabel(l.label)}</span>
       ${l.badge?`<span id="${l.badge}" class="navBadge" style="display:none">0</span>`:''}
     </div>`).join('');
   const name=currentUserData?.name||currentUser?.email||'User';
@@ -1020,6 +1131,18 @@ function navigate(page){
   // Small delay to let sidebar close animation finish
   setTimeout(()=>renderPage(page),50);
 }
+function setupNavHandler(){
+  const nav=document.getElementById('sidebar');
+  if(!nav)return;
+  nav.addEventListener('click',function(e){
+    const btn=e.target.closest('.navLink');
+    if(btn){
+      const page=btn.getAttribute('onclick')?.match(/navigate\('(.+?)'\)/)?.[1];
+      if(page){e.preventDefault();navigate(page);}
+    }
+  },{passive:false});
+}
+
 function toggleSidebar(){
   const sb=document.getElementById('sidebar');
   const ov=document.getElementById('overlay');
@@ -1120,6 +1243,7 @@ function renderPage(page){
     chat:renderChat,
     notifications:renderNotifications,
     loginlogs:()=>isAdmin?renderLoginLogs():navigate('dashboard'),
+    activitylog:()=>isAdmin?renderActivityLog():navigate('dashboard'),
     pinsettings:renderPinSettings,
     myfees:renderMyFees,
     myloans:renderMyLoans,
@@ -1166,21 +1290,21 @@ async function renderDashboard(){
       const [txSnap,mSnap,lSnap,sSnap,fSnap,annSnap,lrSnap]=await Promise.all([
         db.collection('transactions').get(),
         db.collection('users').where('role','==','member').get(),
-        db.collection('loans').where('status','!=','paid').get(),
+        db.collection('loans').get(),
         db.collection('savings').get(),
-        db.collection('fines').where('status','==','pending').get(),
+        db.collection('fines').get(),
         db.collection('announcements').orderBy('createdAt','desc').limit(2).get().catch(()=>({docs:[]})),
-        db.collection('loanRequests').where('status','==','pending').get().catch(()=>({docs:[]})),
+        db.collection('loanRequests').get().catch(()=>({docs:[]})),
       ]);
       const txs=txSnap.docs.map(d=>d.data());
       const inc=txs.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
       const exp=txs.filter(t=>t.type==='expense').reduce((a,t)=>a+t.amount,0);
-      const lDue=lSnap.docs.reduce((a,d)=>a+(d.data().remaining||0),0);
+      const lDue=lSnap.docs.filter(d=>d.data().status!=='paid').reduce((a,d)=>a+(d.data().remaining||0),0);
       const tSav=sSnap.docs.reduce((a,d)=>a+(d.data().amount||0),0);
-      const tFines=fSnap.docs.reduce((a,d)=>a+(d.data().amount||0),0);
+      const tFines=fSnap.docs.filter(d=>d.data().status==='pending').reduce((a,d)=>a+(d.data().amount||0),0);
       const recent=txSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'')>(a.date||'')?1:-1).slice(0,5);
       const anns=annSnap.docs.map(d=>({id:d.id,...d.data()}));
-      const pendingLR=lrSnap.docs.length;
+      const pendingLR=lrSnap.docs.filter(d=>d.data().status==='pending').length;
 
       c.innerHTML=`
         <div class="pageTitle"><span>📊</span>Dashboard</div>
@@ -1216,16 +1340,17 @@ async function renderDashboard(){
     } else {
       const uid=currentUser.uid;
       const [myTxSnap,myLSnap,mySSnap,myFSnap,annSnap]=await Promise.all([
-        db.collection('transactions').where('memberId','==',uid).orderBy('date','desc').limit(5).get().catch(()=>({docs:[]})),
-        db.collection('loans').where('memberId','==',uid).where('status','!=','paid').get().catch(()=>({docs:[]})),
+        db.collection('transactions').where('memberId','==',uid).get().catch(()=>({docs:[]})),
+        db.collection('loans').where('memberId','==',uid).get().catch(()=>({docs:[]})),
         db.collection('savings').where('memberId','==',uid).get().catch(()=>({docs:[]})),
-        db.collection('fines').where('memberId','==',uid).where('status','==','pending').get().catch(()=>({docs:[]})),
+        db.collection('fines').where('memberId','==',uid).get().catch(()=>({docs:[]})),
         db.collection('announcements').orderBy('createdAt','desc').limit(3).get().catch(()=>({docs:[]})),
       ]);
-      const paid=myTxSnap.docs.filter(d=>d.data().type==='income').reduce((a,d)=>a+d.data().amount,0);
-      const lDue=myLSnap.docs.reduce((a,d)=>a+(d.data().remaining||0),0);
+      const myTxSorted=myTxSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'')>(a.date||'')?1:-1);
+      const paid=myTxSorted.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
+      const lDue=myLSnap.docs.filter(d=>d.data().status!=='paid').reduce((a,d)=>a+(d.data().remaining||0),0);
       const sav=mySSnap.docs.reduce((a,d)=>a+(d.data().amount||0),0);
-      const fines=myFSnap.docs.reduce((a,d)=>a+(d.data().amount||0),0);
+      const fines=myFSnap.docs.filter(d=>d.data().status==='pending').reduce((a,d)=>a+(d.data().amount||0),0);
       const anns=annSnap.docs.map(d=>({id:d.id,...d.data()}));
 
       c.innerHTML=`
@@ -1247,7 +1372,7 @@ async function renderDashboard(){
           <div class="tableWrap"><table>
             <thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Type</th></tr></thead>
             <tbody>${myTxSnap.docs.length===0?`<tr><td colspan="4" class="empty">Kुनै transaction छैन</td></tr>`:
-              myTxSnap.docs.map(d=>{const t=d.data();return`<tr>
+              myTxSorted.slice(0,5).map(t=>{return`<tr>
                 <td>${NepaliDate.convert(new Date(t.date||Date.now())).str}</td>
                 <td>${t.category||'—'}</td>
                 <td style="font-weight:800;color:${t.type==='income'?'#4ade80':'#f87171'}">${fmt(t.amount)}</td>
@@ -1420,7 +1545,7 @@ async function renderLoans(){
   const mSnap=await db.collection('users').where('role','==','member').get();
   const members=mSnap.docs.map(d=>({id:d.id,...d.data()}));
   async function load(){
-    const snap=await db.collection('loans').orderBy('createdAt','desc').get().catch(()=>({docs:[]}));
+    const snap=await db.collection('loans').get().catch(()=>({docs:[]}));
     const loans=snap.docs.map(d=>({id:d.id,...d.data()}));
     c.innerHTML=`
       <div class="pageTitle"><span>🏦</span>Loans</div>
@@ -1454,7 +1579,8 @@ async function renderLoans(){
               <div><div class="sLabel">Due Date</div><div class="lval">${l.dueDate||'—'}</div></div>
             </div>
             <div style="display:flex;gap:8px;margin-top:12px">
-              <button class="btnSm" style="font-size:11px;padding:6px 12px" onclick="repayLoan('${l.id}','${l.memberName||''}',${l.remaining??l.amount},'${l.memberId||''}')">💳 Repayment</button>
+              <button class="btnSm" style="font-size:11px;padding:6px 12px" onclick="repayLoan('${l.id}','${l.memberName||''}',${l.remaining??l.amount},'${l.memberId||''}',${l.rate||0})">💳 Repayment</button>
+              <button class="btnGhost" style="font-size:11px;padding:6px 12px" onclick="viewLoanHistory('${l.id}','${l.memberName||''}')">📋 History</button>
               <button class="btnSm btnGreen" style="font-size:11px;padding:6px 12px" onclick="printLoan(${JSON.stringify(l).replace(/'/g,'')})">🖨️ Print</button>
               <button class="btnDanger" onclick="delLoan('${l.id}')">🗑</button>
             </div>
@@ -1476,40 +1602,76 @@ async function renderLoans(){
     await addNotif(`${memberName} lai ${fmt(amt)} loan diyiyo (${rate}% interest/month)`,'info',memberId);
     toast('Loan add bhayo!');load();
   };
-  window.repayLoan=async(id,name,remaining,memberId)=>{
+  window.repayLoan=async(id,name,remaining,memberId,rate)=>{
     const amt=Number(prompt(`${name} le kati tiryo? (Remaining: Rs.${remaining})`));
     if(!amt||amt<=0)return;
     const method=prompt('Payment method? (Cash/eSewa/Bank/Khalti)')||'Cash';
-    const newRem=Math.max(0,remaining-amt);
-    await db.collection('loans').doc(id).update({remaining:newRem,status:newRem===0?'paid':'partial'});
-    await db.collection('transactions').add({type:'income',category:'Loan Repayment',amount:amt,date:todayStr(),dateBS:NepaliDate.convert(new Date()).str,memberName:name,memberId,method,note:'Loan repayment',by:currentUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    const interest=rate>0?Math.round(remaining*rate/100):0;
+    const principal=Math.max(0,amt-interest);
+    const newRem=Math.max(0,remaining-principal);
+    const overpayment=amt>remaining?amt-remaining:0;
+    // Update loan
+    await db.collection('loans').doc(id).update({
+      remaining:newRem,
+      status:newRem===0?'paid':'partial',
+      lastPayment:{amount:amt,date:todayStr(),dateBS:NepaliDate.convert(new Date()).str,method,interest,principal}
+    });
+    // Add payment to history subcollection
+    await db.collection('loans').doc(id).collection('payments').add({
+      amount:amt,principal,interest,method,remaining:newRem,
+      date:todayStr(),dateBS:NepaliDate.convert(new Date()).str,
+      by:currentUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    // Record transaction
+    await db.collection('transactions').add({type:'income',category:'Loan Repayment',amount:amt,date:todayStr(),dateBS:NepaliDate.convert(new Date()).str,memberName:name,memberId,method,note:`Loan repayment (Principal:${fmt(principal)}, Interest:${fmt(interest)})`,by:currentUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    // Overpayment goes to savings
+    if(overpayment>0){
+      await db.collection('savings').add({memberId,memberName:name,amount:overpayment,method,date:todayStr(),dateBS:NepaliDate.convert(new Date()).str,note:'Loan overpayment auto-savings',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+      await addNotif(`${name} le badi tireko ${fmt(overpayment)} savings ma rakiyo!`,'success',memberId);
+    }
+    // Activity log
+    await logActivity('loan_repayment',`${name} le ${fmt(amt)} loan tiryo. Remaining: ${fmt(newRem)}`,{loanId:id,memberId,amount:amt});
     await addNotif(`${name} le ${fmt(amt)} loan tiryo! Remaining: ${fmt(newRem)}`,'success','all');
     toast('Repayment recorded!');load();
   };
   window.delLoan=async id=>{if(!confirm('Delete?'))return;await db.collection('loans').doc(id).delete();toast('Deleted!','error');load();};
   window.printLoan=async(loan)=>{
-    try{
-      const {jsPDF}=window.jspdf;
-      const doc=new jsPDF();
-      doc.setFontSize(20);doc.text('Daju-Bhai Samuha',105,20,{align:'center'});
-      doc.setFontSize(14);doc.text('Loan Agreement Document',105,30,{align:'center'});
-      doc.line(15,35,195,35);
-      doc.setFontSize(11);
-      const fields=[
-        ['Member Name',loan.memberName||'—'],['Loan Amount',fmt(loan.amount)],
-        ['Interest Rate',`${loan.rate||0}% per month`],['Issue Date',loan.issueDate||'—'],
-        ['Due Date',loan.dueDate||'—'],['Purpose',loan.note||'—'],
-        ['Status',loan.status||'active'],['Remaining',fmt(loan.remaining??loan.amount)],
-      ];
-      let y=50;
-      fields.forEach(([k,v])=>{doc.text(`${k}:`,20,y);doc.setFont(undefined,'bold');doc.text(v,90,y);doc.setFont(undefined,'normal');y+=12;});
-      y+=10;doc.line(15,y,195,y);y+=10;
-      doc.setFontSize(9);doc.text('Member Signature: ____________________',20,y+20);
-      doc.text('Admin Signature: ____________________',120,y+20);
-      doc.text(`Generated: ${new Date().toLocaleDateString()} | Daju-Bhai Samuha - ESTD 2025`,105,280,{align:'center'});
-      doc.save(`loan_${loan.memberName||'doc'}.pdf`);
-      toast('Loan document downloaded!');
-    }catch(e){toast('Print error: '+e.message,'error');}
+    const printWin=window.open('','_blank');
+    printWin.document.write(`<!DOCTYPE html><html><head>
+      <title>Loan Document - ${loan.memberName||''}</title>
+      <style>body{font-family:Arial,sans-serif;padding:40px;max-width:600px;margin:0 auto}
+      h1{text-align:center;border-bottom:2px solid #000;padding-bottom:10px}
+      h2{text-align:center;font-size:16px;color:#555}
+      table{width:100%;border-collapse:collapse;margin-top:20px}
+      td{padding:10px;border:1px solid #ddd}
+      td:first-child{font-weight:bold;background:#f5f5f5;width:40%}
+      .sign{display:flex;justify-content:space-between;margin-top:60px}
+      .sign div{text-align:center;border-top:1px solid #000;padding-top:8px;width:40%}
+      .footer{text-align:center;margin-top:40px;color:#888;font-size:12px}
+      @media print{button{display:none}}</style>
+    </head><body>
+      <h1>🏦 दाजुभाइ समूह</h1>
+      <h2>Loan Agreement Document</h2>
+      <button onclick="window.print()" style="display:block;margin:10px auto;padding:10px 20px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer">🖨️ Print Now</button>
+      <table>
+        <tr><td>Member Name</td><td>${loan.memberName||'—'}</td></tr>
+        <tr><td>Member ID</td><td>${loan.memberId||'—'}</td></tr>
+        <tr><td>Loan Amount</td><td>${fmt(loan.amount)}</td></tr>
+        <tr><td>Remaining</td><td>${fmt(loan.remaining??loan.amount)}</td></tr>
+        <tr><td>Interest Rate</td><td>${loan.rate||0}% per month</td></tr>
+        <tr><td>Issue Date</td><td>${loan.issueDate||'—'}</td></tr>
+        <tr><td>Due Date</td><td>${loan.dueDate||'—'}</td></tr>
+        <tr><td>Purpose</td><td>${loan.note||'—'}</td></tr>
+        <tr><td>Status</td><td>${loan.status||'active'}</td></tr>
+      </table>
+      <div class="sign">
+        <div>Member Signature</div>
+        <div>Admin Signature</div>
+      </div>
+      <div class="footer">Generated: ${NepaliDate.convert(new Date()).str} | Daju-Bhai Samuha - ESTD 2025 | Dhenjugeon, Bhaktapur</div>
+    </body></html>`);
+    printWin.document.close();
+    toast('Print window opened!');
   };
 }
 
@@ -1517,7 +1679,8 @@ async function renderLoans(){
 async function renderLoanRequests(){
   const c=document.getElementById('mainContent');
   async function load(){
-    const snap=await db.collection('loanRequests').orderBy('createdAt','desc').get().catch(()=>({docs:[]}));
+    const snap=await db.collection('loanRequests').get().catch(()=>({docs:[]}));
+    snap.docs.sort((a,b)=>(b.data().date||'')>(a.data().date||'')?1:-1);
     const reqs=snap.docs.map(d=>({id:d.id,...d.data()}));
     c.innerHTML=`
       <div class="pageTitle"><span>📋</span>Loan Requests</div>
@@ -1563,7 +1726,7 @@ async function renderLoanRequests(){
 // ====== LOAN REQUEST FORM (Member) ======
 async function renderLoanRequestForm(){
   const c=document.getElementById('mainContent');
-  const myReqs=await db.collection('loanRequests').where('memberId','==',currentUser.uid).orderBy('createdAt','desc').get().catch(()=>({docs:[]}));
+  const myReqs=await db.collection('loanRequests').where('memberId','==',currentUser.uid).get().catch(()=>({docs:[]}));
   const reqs=myReqs.docs.map(d=>({id:d.id,...d.data()}));
   c.innerHTML=`
     <div class="pageTitle"><span>📝</span>Loan Request</div>
@@ -1703,7 +1866,8 @@ async function renderFines(){
         <div class="formGrid">
           <div class="field"><label>Member</label><select id="fMember"><option value="">Select</option>${members.map(m=>`<option value="${m.id}">${m.name}</option>`).join('')}</select></div>
           <div class="field"><label>Amount (Rs.)</label><input type="number" id="fAmt" placeholder="500"/></div>
-          <div class="field"><label>Reason</label><select id="fReason"><option>Late Payment Fine</option><option>Meeting Absence Fine</option><option>Rule Violation Fine</option><option>Delay Charge</option><option>Interest Penalty</option><option>Other Due</option></select></div>
+          <div class="field"><label>Category</label><select id="fCategory"><option value="fine">💰 Fine</option><option value="penalty">⚡ Penalty</option><option value="form">📝 Form Charge</option></select></div>
+          <div class="field"><label>Reason</label><select id="fReason"><option>Late Payment Fine</option><option>Meeting Absence Fine</option><option>Rule Violation Fine</option><option>Delay Charge</option><option>Interest Penalty</option><option>Form Registration</option><option>Other</option></select></div>
           <div class="field"><label>Date</label><input type="date" id="fDate" value="${todayStr()}"/></div>
           <div class="field"><label>Note</label><input type="text" id="fNote" placeholder="Details..."/></div>
         </div>
@@ -1711,7 +1875,7 @@ async function renderFines(){
       </div>
       <div class="card">
         <div class="tableWrap"><table>
-          <thead><tr><th>Member</th><th>Amount</th><th>Reason</th><th>Date (BS)</th><th>Status</th><th>Action</th></tr></thead>
+          <thead><tr><th>Member</th><th>Category</th><th>Amount</th><th>Reason</th><th>Date (BS)</th><th>Paid By/When</th><th>Status</th><th>Action</th></tr></thead>
           <tbody>${fines.length===0?`<tr><td colspan="6" class="empty">Kुनै fine छैन</td></tr>`:
             fines.map(f=>`<tr>
               <td>${f.memberName||'—'}</td>
@@ -1732,6 +1896,7 @@ async function renderFines(){
   window.saveFine=async()=>{
     const memberId=document.getElementById('fMember').value;
     const amt=Number(document.getElementById('fAmt').value);
+    const category=document.getElementById('fCategory')?.value||'fine';
     const reason=document.getElementById('fReason').value;
     const date=document.getElementById('fDate').value;
     const note=document.getElementById('fNote').value;
@@ -1739,12 +1904,15 @@ async function renderFines(){
     if(!amt||amt<=0){toast('Amount haalnuhos!','error');return;}
     const memberName=members.find(m=>m.id===memberId)?.name||'';
     const dateBS=NepaliDate.convert(new Date(date)).str;
-    await db.collection('fines').add({memberId,memberName,amount:amt,reason,date,dateBS,note,status:'pending',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    await db.collection('fines').add({memberId,memberName,amount:amt,category,reason,date,dateBS,note,status:'pending',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    await logActivity('fine_added',`${memberName} lai ${fmt(amt)} ${category} lagayo`,{memberId,amount:amt,category,reason});
     await addNotif(`⚠️ Timilai ${reason}: ${fmt(amt)} fine lagyo!`,'warning',memberId);
     toast('Fine add bhayo!');load();
   };
   window.markFinePaid=async(id,name,memberId,amt)=>{
-    await db.collection('fines').doc(id).update({status:'paid',paidAt:firebase.firestore.FieldValue.serverTimestamp()});
+    const bsNow=NepaliDate.convert(new Date()).str;
+    await db.collection('fines').doc(id).update({status:'paid',paidBy:name,paidDateBS:bsNow,paidAt:firebase.firestore.FieldValue.serverTimestamp()});
+    await logActivity('fine_paid',`${name} ko fine tiriyeko: ${fmt(amt)}`,{memberId,amount:amt});
     await db.collection('transactions').add({type:'income',category:'Fine Collected',amount:amt,date:todayStr(),dateBS:todayNepali().str,memberName:name,memberId,method:'Cash',note:'Fine payment',by:currentUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
     await addNotif(`${name} ko fine tiriyeko cha!`,'success','all');
     toast('Fine paid!');load();
@@ -1995,8 +2163,15 @@ async function renderMeetings(){
 // ====== REPORTS ======
 async function renderReports(){
   const c=document.getElementById('mainContent');
-  const snap=await db.collection('transactions').get();
-  const txs=snap.docs.map(d=>d.data());
+  const [txSnap,savSnap,loanSnap]=await Promise.all([
+    db.collection('transactions').get(),
+    db.collection('savings').get(),
+    db.collection('loans').get(),
+  ]);
+  const txs=txSnap.docs.map(d=>d.data());
+  const savs=savSnap.docs.map(d=>d.data());
+  const loans=loanSnap.docs.map(d=>d.data());
+  let reportPeriod=12; // default annual
   const monthly={};
   txs.forEach(t=>{const m=(t.date||'').substring(0,7);if(!m)return;if(!monthly[m]){monthly[m]={income:0,expense:0};}if(t.type==='income')monthly[m].income+=t.amount;else monthly[m].expense+=t.amount;});
   const labels=Object.keys(monthly).sort().slice(-12);
@@ -2012,9 +2187,21 @@ async function renderReports(){
       <div class="statCard"><div class="sIcon">💰</div><div class="sVal" style="color:#4ade80">${fmt(totalInc)}</div><div class="sLabel">Total Income</div></div>
       <div class="statCard"><div class="sIcon">📤</div><div class="sVal" style="color:#f87171">${fmt(totalExp)}</div><div class="sLabel">Total Expense</div></div>
       <div class="statCard"><div class="sIcon">🏦</div><div class="sVal" style="color:var(--gold)">${fmt(totalInc-totalExp)}</div><div class="sLabel">Net Balance</div></div>
+      <div class="statCard"><div class="sIcon">🐷</div><div class="sVal" style="color:#34d399">${fmt(savs.reduce((a,s)=>a+s.amount,0))}</div><div class="sLabel">Total Savings</div></div>
+      <div class="statCard"><div class="sIcon">🏦</div><div class="sVal" style="color:#f87171">${fmt(loans.filter(l=>l.status!=='paid').reduce((a,l)=>a+(l.remaining||0),0))}</div><div class="sLabel">Loan Outstanding</div></div>
     </div>
-    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-      <button class="btnSm" onclick="exportFullPDF()">📄 Full Report PDF</button>
+    <div class="card" style="margin-bottom:14px">
+      <div class="cardHead">Member-wise Savings Summary</div>
+      <div class="tableWrap"><table>
+        <thead><tr><th>Member</th><th>Total Savings</th><th>Loan Remaining</th><th>Fines Paid</th></tr></thead>
+        <tbody id="memberSummaryBody"><tr><td colspan="4" class="empty">Loading...</td></tr></tbody>
+      </table></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:13px;color:var(--text2);font-weight:600">Period:</span>
+      ${['3 Month','6 Month','Annual'].map((p,i)=>`<button class="pill${reportPeriod===[3,6,12][i]?' active':''}" onclick="reportPeriod=${[3,6,12][i]};renderReports()">${p}</button>`).join('')}
+      <button class="btnSm" onclick="exportFullPDF()">📄 PDF Export</button>
+      <button class="btnSm btnGreen" onclick="exportAllDataExcel()">📊 Excel Backup</button>
     </div>
     <div class="card"><div class="cardHead">Monthly Income vs Expense</div><div class="chartWrap"><canvas id="barChart"></canvas></div></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
@@ -2125,9 +2312,39 @@ async function renderLoginLogs(){
   c.innerHTML=`
     <div class="pageTitle"><span>🕐</span>Login Logs</div>
     <div class="card"><div class="tableWrap"><table>
-      <thead><tr><th>Email</th><th>Login Time</th></tr></thead>
-      <tbody>${logs.length===0?`<tr><td colspan="2" class="empty">Kुनै log छैन</td></tr>`:
-        logs.map(l=>`<tr><td>${l.email||'—'}</td><td>${l.time?.toDate?fmtTime(l.time.toDate()):'—'}</td></tr>`).join('')}
+      <thead><tr><th>Email</th><th>Date (BS)</th><th>Device</th><th>Browser</th><th>Time</th></tr></thead>
+      <tbody>${logs.length===0?`<tr><td colspan="5" class="empty">Kुनै log छैन</td></tr>`:
+        logs.map(l=>`<tr>
+          <td>${l.email||'—'}</td>
+          <td style="color:var(--gold);font-weight:700">${l.dateBS||'—'}</td>
+          <td>${l.device||'—'}</td>
+          <td>${l.browser||'—'}</td>
+          <td>${l.time?.toDate?fmtTime(l.time.toDate()):'—'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div></div>`;
+}
+
+// ====== ACTIVITY LOG ======
+async function renderActivityLog(){
+  const c=document.getElementById('mainContent');
+  const snap=await db.collection('activityLog').orderBy('timestamp','desc').limit(100).get().catch(()=>({docs:[]}));
+  const logs=snap.docs.map(d=>({id:d.id,...d.data()}));
+  c.innerHTML=`
+    <div class="pageTitle"><span>📝</span>Activity Log</div>
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <button class="btnSm btnGreen" onclick="exportAllDataExcel()">📊 Excel Backup</button>
+    </div>
+    <div class="card"><div class="tableWrap"><table>
+      <thead><tr><th>Date (BS)</th><th>Action</th><th>Description</th><th>By</th><th>Time</th></tr></thead>
+      <tbody>${logs.length===0?`<tr><td colspan="5" class="empty">Kुनै activity छैन</td></tr>`:
+        logs.map(l=>`<tr>
+          <td style="color:var(--gold);font-weight:600">${l.dateBS||'—'}</td>
+          <td><span class="tag loan">${l.action||'—'}</span></td>
+          <td>${l.description||'—'}</td>
+          <td>${l.userName||'—'}</td>
+          <td>${l.timestamp?.toDate?fmtTime(l.timestamp.toDate()):'—'}</td>
+        </tr>`).join('')}
       </tbody>
     </table></div></div>`;
 }
@@ -2210,6 +2427,31 @@ async function renderMyFees(){
 }
 
 // ====== MY LOANS ======
+async function viewLoanHistory(loanId,name){
+  const snap=await db.collection('loans').doc(loanId).collection('payments').get().catch(()=>({docs:[]}));
+  const payments=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'')>(a.date||'')?1:-1);
+  const modal=document.createElement('div');
+  modal.className='modalOverlay';
+  modal.innerHTML=`<div class="modalCard" style="max-width:560px">
+    <h2>💳 ${name} — Payment History</h2>
+    <div class="tableWrap"><table>
+      <thead><tr><th>Date (BS)</th><th>Total</th><th>Principal</th><th>Interest</th><th>Method</th><th>Remaining</th></tr></thead>
+      <tbody>${payments.length===0?`<tr><td colspan="6" class="empty">Kुनै payment छैन</td></tr>`:
+        payments.map(p=>`<tr>
+          <td>${p.dateBS||p.date||'—'}</td>
+          <td style="font-weight:800;color:#4ade80">${fmt(p.amount)}</td>
+          <td>${fmt(p.principal||p.amount)}</td>
+          <td style="color:#fbbf24">${fmt(p.interest||0)}</td>
+          <td>${p.method||'Cash'}</td>
+          <td style="color:#f87171">${fmt(p.remaining||0)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>
+    <div class="modalActions"><button class="btnGhost" onclick="this.closest('.modalOverlay').remove()">Close</button></div>
+  </div>`;
+  document.body.appendChild(modal);
+}
+
 async function renderMyLoans(){
   const c=document.getElementById('mainContent');
   const snap=await db.collection('loans').where('memberId','==',currentUser.uid).get().catch(()=>({docs:[]}));
@@ -2245,7 +2487,7 @@ async function renderMyLoans(){
 // ====== MY SAVINGS ======
 async function renderMySavings(){
   const c=document.getElementById('mainContent');
-  const snap=await db.collection('savings').where('memberId','==',currentUser.uid).orderBy('date','desc').get().catch(()=>({docs:[]}));
+  const snap=await db.collection('savings').where('memberId','==',currentUser.uid).get().catch(()=>({docs:[]}));
   const savs=snap.docs.map(d=>({id:d.id,...d.data()}));
   const total=savs.reduce((a,s)=>a+s.amount,0);
   c.innerHTML=`
