@@ -1163,26 +1163,72 @@ function closeSidebar(){
 
 // ====== NOTIFICATIONS ======
 async function addNotif(msg,type='info',target='all'){
+  // If target is 'admin', find admin users and send to each
+  if(target==='admin'){
+    try{
+      const adminSnap=await db.collection('users').where('role','==','admin').get();
+      const batch=db.batch();
+      adminSnap.docs.forEach(d=>{
+        const ref=db.collection('notifications').doc();
+        batch.set(ref,{msg,type,target:d.id,readBy:[],createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+      });
+      await batch.commit();
+    }catch(e){
+      await db.collection('notifications').add({msg,type,target:'all',readBy:[],createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    }
+    return;
+  }
   await db.collection('notifications').add({msg,type,target,readBy:[],createdAt:firebase.firestore.FieldValue.serverTimestamp()});
 }
 function listenNotifs(){
   if(!currentUser)return;
-  const q=db.collection('notifications').where('target','in',['all',currentUser.uid]).orderBy('createdAt','desc').limit(30);
-  notifUnsub=q.onSnapshot(snap=>{
-    const notifs=snap.docs.map(d=>({id:d.id,...d.data()}));
-    const unread=notifs.filter(n=>!n.readBy?.includes(currentUser.uid)).length;
-    const badge=document.getElementById('notifBadge');
+  // Listen to 'all' notifications
+  const q1=db.collection('notifications').where('target','==','all').orderBy('createdAt','desc').limit(20);
+  // Listen to user-specific notifications  
+  const q2=db.collection('notifications').where('target','==',currentUser.uid).orderBy('createdAt','desc').limit(20);
+  
+  let allNotifs=[];
+  let userNotifs=[];
+  
+  function updateUI(){
+    // Merge and sort
+    const seen=new Set();
+    const merged=[...allNotifs,...userNotifs].filter(n=>{
+      if(seen.has(n.id))return false;
+      seen.add(n.id);return true;
+    }).sort((a,b)=>(b.createdAt?.toMillis?.())||0-(a.createdAt?.toMillis?.())||0);
+    
+    const unread=merged.filter(n=>!n.readBy?.includes(currentUser.uid)).length;
+    
+    // Update badges
+    ['notifBadge','notifBadge2'].forEach(id=>{
+      const el=document.getElementById(id);
+      if(el){el.textContent=unread>9?'9+':unread;el.style.display=unread>0?'flex':'none';}
+    });
     const sideBadge=document.getElementById('notifSideBadge');
-    if(badge){badge.textContent=unread;badge.style.display=unread>0?'flex':'none';}
-    if(sideBadge){sideBadge.textContent=unread;sideBadge.style.display=unread>0?'inline-block':'none';}
+    if(sideBadge){sideBadge.textContent=unread>9?'9+':unread;sideBadge.style.display=unread>0?'inline-block':'none';}
+    
+    // Update dropdown
     const list=document.getElementById('notifDropList');
     if(list){
-      list.innerHTML=notifs.length===0?'<div class="empty">Kुनै notification छैन</div>':
-        notifs.slice(0,8).map(n=>`<div class="notifItem${!n.readBy?.includes(currentUser.uid)?' unread':''}">
+      list.innerHTML=merged.length===0?'<div class="empty">Kुनै notification छैन</div>':
+        merged.slice(0,10).map(n=>`<div class="notifItem${!n.readBy?.includes(currentUser.uid)?' unread':''}">
           <span style="font-size:18px">${n.type==='success'?'✅':n.type==='warning'?'⚠️':n.type==='error'?'❌':'ℹ️'}</span>
           <div><div class="nmsg">${n.msg}</div><div class="ntime">${n.createdAt?.toDate?fmtTime(n.createdAt.toDate()):''}</div></div>
         </div>`).join('');
     }
+    
+    // Update notifications page if open
+    if(currentPage==='notifications') renderNotifications();
+  }
+  
+  notifUnsub=q1.onSnapshot(snap=>{
+    allNotifs=snap.docs.map(d=>({id:d.id,...d.data()}));
+    updateUI();
+  });
+  q2.onSnapshot(snap=>{
+    userNotifs=snap.docs.map(d=>({id:d.id,...d.data()}));
+    updateUI();
   });
 }
 function toggleNotif(){const d=document.getElementById('notifDrop');d.style.display=d.style.display==='none'?'block':'none';}
@@ -1192,10 +1238,24 @@ document.addEventListener('click',e=>{
   if(btn&&drop&&!btn.contains(e.target)&&!drop.contains(e.target))drop.style.display='none';
 });
 async function markAllRead(){
-  const snaps=await db.collection('notifications').where('target','in',['all',currentUser.uid]).get();
-  const batch=db.batch();
-  snaps.docs.forEach(d=>{const arr=d.data().readBy||[];if(!arr.includes(currentUser.uid))batch.update(d.ref,{readBy:[...arr,currentUser.uid]});});
-  await batch.commit();
+  try{
+    const [s1,s2]=await Promise.all([
+      db.collection('notifications').where('target','==','all').get(),
+      db.collection('notifications').where('target','==',currentUser.uid).get(),
+    ]);
+    const batch=db.batch();
+    [...s1.docs,...s2.docs].forEach(d=>{
+      const arr=d.data().readBy||[];
+      if(!arr.includes(currentUser.uid)){
+        batch.update(d.ref,{readBy:firebase.firestore.FieldValue.arrayUnion(currentUser.uid)});
+      }
+    });
+    await batch.commit();
+    const badge=document.getElementById('notifBadge');
+    if(badge)badge.style.display='none';
+    const sideBadge=document.getElementById('notifSideBadge');
+    if(sideBadge)sideBadge.style.display='none';
+  }catch(e){console.log('markAllRead error:',e);}
 }
 
 // ====== CHAT BADGE ======
@@ -1321,13 +1381,13 @@ async function renderDashboard(){
           <div class="aMeta">— ${a.author||'Admin'} • ${a.createdAt?.toDate?fmtTime(a.createdAt.toDate()):''}</div>
         </div>`).join(''):''}
         <div class="statsGrid">
-          <div class="statCard"><div class="sIcon">💰</div><div class="sVal" style="color:#4ade80">${fmt(inc)}</div><div class="sLabel">Total Income</div></div>
-          <div class="statCard"><div class="sIcon">📤</div><div class="sVal" style="color:#f87171">${fmt(exp)}</div><div class="sLabel">Total Expense</div></div>
-          <div class="statCard"><div class="sIcon">🏦</div><div class="sVal" style="color:var(--gold)">${fmt(inc-exp)}</div><div class="sLabel">Balance</div></div>
-          <div class="statCard"><div class="sIcon">👥</div><div class="sVal" style="color:#a78bfa">${mSnap.size}</div><div class="sLabel">Members</div></div>
-          <div class="statCard"><div class="sIcon">⚠️</div><div class="sVal" style="color:#fbbf24">${fmt(lDue)}</div><div class="sLabel">Loan Due</div></div>
-          <div class="statCard"><div class="sIcon">🐷</div><div class="sVal" style="color:#34d399">${fmt(tSav)}</div><div class="sLabel">Total Savings</div></div>
-          <div class="statCard"><div class="sIcon">🚨</div><div class="sVal" style="color:#f87171">${fmt(tFines)}</div><div class="sLabel">Pending Fines</div></div>
+          <div class="statCard" onclick="navigate('transactions')" style="cursor:pointer"><div class="sIcon">💰</div><div class="sVal" style="color:#4ade80">${fmt(inc)}</div><div class="sLabel">Total Income</div></div>
+          <div class="statCard" onclick="navigate('transactions')" style="cursor:pointer"><div class="sIcon">📤</div><div class="sVal" style="color:#f87171">${fmt(exp)}</div><div class="sLabel">Total Expense</div></div>
+          <div class="statCard" onclick="navigate('reports')" style="cursor:pointer"><div class="sIcon">🏦</div><div class="sVal" style="color:var(--gold)">${fmt(inc-exp)}</div><div class="sLabel">Balance</div></div>
+          <div class="statCard" onclick="navigate('members')" style="cursor:pointer"><div class="sIcon">👥</div><div class="sVal" style="color:#a78bfa">${mSnap.size}</div><div class="sLabel">Members</div></div>
+          <div class="statCard" onclick="navigate('loans')" style="cursor:pointer"><div class="sIcon">⚠️</div><div class="sVal" style="color:#fbbf24">${fmt(lDue)}</div><div class="sLabel">Loan Due</div></div>
+          <div class="statCard" onclick="navigate('savings')" style="cursor:pointer"><div class="sIcon">🐷</div><div class="sVal" style="color:#34d399">${fmt(tSav)}</div><div class="sLabel">Total Savings</div></div>
+          <div class="statCard" onclick="navigate('fines')" style="cursor:pointer"><div class="sIcon">🚨</div><div class="sVal" style="color:#f87171">${fmt(tFines)}</div><div class="sLabel">Pending Fines</div></div>
         </div>
         <div class="card">
           <div class="cardHead">Recent Transactions <span class="ch-badge">${recent.length} records</span></div>
@@ -1352,6 +1412,8 @@ async function renderDashboard(){
         db.collection('fines').where('memberId','==',uid).get().catch(()=>({docs:[]})),
         db.collection('announcements').orderBy('createdAt','desc').limit(3).get().catch(()=>({docs:[]})),
       ]);
+      // Also get savings added by admin for this member
+      const adminSavSnap=await db.collection('savings').where('memberId','==',uid).get().catch(()=>({docs:[]}));
       const myTxSorted=myTxSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'')>(a.date||'')?1:-1);
       const paid=myTxSorted.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
       const lDue=myLSnap.docs.filter(d=>d.data().status!=='paid').reduce((a,d)=>a+(d.data().remaining||0),0);
@@ -1368,10 +1430,10 @@ async function renderDashboard(){
           <div class="aMeta">— ${a.author||'Admin'} • ${a.createdAt?.toDate?fmtTime(a.createdAt.toDate()):''}</div>
         </div>`).join('')}
         <div class="statsGrid">
-          <div class="statCard"><div class="sIcon">✅</div><div class="sVal" style="color:#4ade80">${fmt(paid)}</div><div class="sLabel">Total Paid</div></div>
-          <div class="statCard"><div class="sIcon">🏦</div><div class="sVal" style="color:#f87171">${fmt(lDue)}</div><div class="sLabel">Loan Due</div></div>
-          <div class="statCard"><div class="sIcon">🐷</div><div class="sVal" style="color:#34d399">${fmt(sav)}</div><div class="sLabel">My Savings</div></div>
-          <div class="statCard"><div class="sIcon">⚠️</div><div class="sVal" style="color:#fbbf24">${fmt(fines)}</div><div class="sLabel">Pending Fines</div></div>
+          <div class="statCard" onclick="navigate('myfees')" style="cursor:pointer"><div class="sIcon">✅</div><div class="sVal" style="color:#4ade80">${fmt(paid)}</div><div class="sLabel">Total Paid</div></div>
+          <div class="statCard" onclick="navigate('myloans')" style="cursor:pointer"><div class="sIcon">🏦</div><div class="sVal" style="color:#f87171">${fmt(lDue)}</div><div class="sLabel">Loan Due</div></div>
+          <div class="statCard" onclick="navigate('mysavings')" style="cursor:pointer"><div class="sIcon">🐷</div><div class="sVal" style="color:#34d399">${fmt(sav)}</div><div class="sLabel">My Savings</div></div>
+          <div class="statCard" onclick="navigate('notifications')" style="cursor:pointer"><div class="sIcon">⚠️</div><div class="sVal" style="color:#fbbf24">${fmt(fines)}</div><div class="sLabel">Pending Fines</div></div>
         </div>
         <div class="card">
           <div class="cardHead">Recent Transactions</div>
@@ -2168,6 +2230,7 @@ async function renderMeetings(){
 
 // ====== REPORTS ======
 async function renderReports(){
+  const isAdmin=currentUserData?.role==='admin';
   const c=document.getElementById('mainContent');
   const [txSnap,savSnap,loanSnap]=await Promise.all([
     db.collection('transactions').get(),
@@ -2206,8 +2269,8 @@ async function renderReports(){
     <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
       <span style="font-size:13px;color:var(--text2);font-weight:600">Period:</span>
       ${['3 Month','6 Month','Annual'].map((p,i)=>`<button class="pill${reportPeriod===[3,6,12][i]?' active':''}" onclick="reportPeriod=${[3,6,12][i]};renderReports()">${p}</button>`).join('')}
-      <button class="btnSm" onclick="exportFullPDF()">📄 PDF Export</button>
-      <button class="btnSm btnGreen" onclick="exportAllDataExcel()">📊 Excel Backup</button>
+      ${isAdmin?`<button class="btnSm" onclick="exportFullPDF()">📄 PDF Export</button>
+      <button class="btnSm btnGreen" onclick="exportAllDataExcel()">📊 Excel Backup</button>`:''}
     </div>
     <div class="card"><div class="cardHead">Monthly Income vs Expense</div><div class="chartWrap"><canvas id="barChart"></canvas></div></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
