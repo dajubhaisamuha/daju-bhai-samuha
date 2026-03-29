@@ -567,7 +567,7 @@ td{padding:11px 14px;color:var(--text);vertical-align:middle}
     <div class="main">
       <div class="topbar">
         <div style="display:flex;align-items:center;gap:10px">
-          <button class="menuBtn" id="menuBtn" onclick="toggleSidebar()">☰</button>
+          <button class="menuBtn" id="menuBtn" onclick="window.toggleSidebar()" type="button">☰</button>
           <div class="greeting">
             <div class="g1" id="greetMsg">Welcome!</div>
             <div class="g2" id="greetName">Loading...</div>
@@ -596,7 +596,7 @@ td{padding:11px 14px;color:var(--text);vertical-align:middle}
 </div>
 
 <div id="toast"></div>
-<div class="overlay" id="overlay" onclick="closeSidebar()"></div>
+<div class="overlay" id="overlay" onclick="window.closeSidebar()"></div>
 
 <script>
 // ====== FIREBASE CONFIG ======
@@ -1121,28 +1121,24 @@ function setupTopbar(){
 }
 function navigate(page){
   currentPage=page;
-  // Close sidebar first on mobile
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('overlay').classList.remove('show');
-  // Update active state
   document.querySelectorAll('.navLink').forEach(el=>el.classList.remove('active'));
   const el=document.getElementById('nav-'+page);
   if(el)el.classList.add('active');
-  // Small delay to let sidebar close animation finish
   setTimeout(()=>renderPage(page),50);
 }
-function setupNavHandler(){
-  const nav=document.getElementById('sidebar');
-  if(!nav)return;
-  nav.addEventListener('click',function(e){
-    const btn=e.target.closest('.navLink');
-    if(btn){
-      const page=btn.getAttribute('onclick')?.match(/navigate\('(.+?)'\)/)?.[1];
-      if(page){e.preventDefault();navigate(page);}
-    }
-  },{passive:false});
-}
-
+window.navigate=navigate;
+window.toggleSidebar=function(){
+  const sb=document.getElementById('sidebar');
+  const ov=document.getElementById('overlay');
+  sb.classList.toggle('open');
+  ov.classList.toggle('show');
+};
+window.closeSidebar=function(){
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('overlay').classList.remove('show');
+};
 function toggleSidebar(){
   const sb=document.getElementById('sidebar');
   const ov=document.getElementById('overlay');
