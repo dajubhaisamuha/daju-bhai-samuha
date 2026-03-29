@@ -723,26 +723,31 @@ const NepaliDate = {
   toNep(n){return String(n).split('').map(d=>this.nums[parseInt(d)]||d).join('')},
   convert(adDate){
     try{
-      // Reference: April 14, 1943 AD = Baisakh 1, 2000 BS
-      const startAD=new Date(1943,3,14);
       const d=new Date(adDate);
-      let totalDays=Math.round((d-startAD)/(24*60*60*1000));
-      if(totalDays<0)return{y:2000,m:1,d:1,str:'२००० बैशाख १',day:this.days[d.getDay()]};
-      let bY=2000,bM=1,bD=1;
-      let safety=0;
-      while(totalDays>0&&safety<2000){
-        safety++;
-        const idx=bY-1999;
-        if(idx<1||idx>=this.bs.length)break;
-        const daysInMonth=this.bs[idx][bM];
-        if(!daysInMonth)break;
-        if(totalDays<daysInMonth){bD=totalDays+1;totalDays=0;}
-        else{totalDays-=daysInMonth;bM++;if(bM>12){bM=1;bY++;}}
+      // Reference point: April 14, 1943 = Baisakh 1, 2000 BS
+      const ref=new Date(1943,3,14);
+      let days=Math.floor((d-ref)/(864e5));
+      let y=2000,m=1,day=1;
+      // Skip full years
+      while(true){
+        const yi=y-1999;
+        if(yi<1||yi>=this.bs.length)break;
+        const diy=this.bs[yi].reduce((a,b)=>a+b,0);
+        if(days<diy)break;
+        days-=diy;y++;
       }
-      if(totalDays===0&&bD===1)bD=1;
-      const dayName=this.days[d.getDay()];
-      return{y:bY,m:bM,d:bD,str:this.toNep(bY)+' '+this.months[bM-1]+' '+this.toNep(bD),day:dayName};
-    }catch(e){return{y:2082,m:12,d:14,str:'२०८२ चैत्र १४',day:'--'};}
+      // Skip full months
+      while(days>=0){
+        const yi=y-1999;
+        if(yi<1||yi>=this.bs.length)break;
+        const dim=this.bs[yi][m-1];
+        if(days<dim){day=days+1;break;}
+        days-=dim;m++;
+        if(m>12){m=1;y++;}
+      }
+      const dn=this.days[d.getDay()];
+      return{y,m,d:day,str:this.toNep(y)+' '+this.months[m-1]+' '+this.toNep(day),day:dn};
+    }catch(e){return{y:2082,m:12,d:15,str:'२०८२ चैत्र १५',day:'--'};}
   }
 };
 
@@ -998,13 +1003,27 @@ function setupTopbar(){
 }
 function navigate(page){
   currentPage=page;
+  // Close sidebar first on mobile
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('overlay').classList.remove('show');
+  // Update active state
   document.querySelectorAll('.navLink').forEach(el=>el.classList.remove('active'));
   const el=document.getElementById('nav-'+page);
   if(el)el.classList.add('active');
-  closeSidebar();renderPage(page);
+  // Small delay to let sidebar close animation finish
+  setTimeout(()=>renderPage(page),50);
 }
-function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('overlay').classList.toggle('show');}
-function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('overlay').classList.remove('show');}
+function toggleSidebar(){
+  const sb=document.getElementById('sidebar');
+  const ov=document.getElementById('overlay');
+  const isOpen=sb.classList.contains('open');
+  if(isOpen){sb.classList.remove('open');ov.classList.remove('show');}
+  else{sb.classList.add('open');ov.classList.add('show');}
+}
+function closeSidebar(){
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('overlay').classList.remove('show');
+}
 
 // ====== NOTIFICATIONS ======
 async function addNotif(msg,type='info',target='all'){
