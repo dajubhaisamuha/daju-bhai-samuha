@@ -595,7 +595,7 @@ td{padding:11px 14px;color:var(--text);vertical-align:middle}
 </div>
 
 <div id="toast"></div>
-<div class="overlay" id="overlay" onclick="window.closeSidebar()"></div>
+<div id="overlay" style="display:none"></div>
 
 <script>
 // ====== FIREBASE CONFIG ======
@@ -1121,7 +1121,8 @@ function setupTopbar(){
 function navigate(page){
   currentPage=page;
   document.getElementById('sidebar').classList.remove('open');
-  document.getElementById('overlay').classList.remove('show');
+  const mc=document.getElementById('mainContent');
+  if(mc){mc.onclick=null;mc.style.opacity='1';}
   document.querySelectorAll('.navLink').forEach(el=>el.classList.remove('active'));
   const el=document.getElementById('nav-'+page);
   if(el)el.classList.add('active');
@@ -1130,13 +1131,24 @@ function navigate(page){
 window.navigate=navigate;
 window.toggleSidebar=function(){
   const sb=document.getElementById('sidebar');
-  const ov=document.getElementById('overlay');
-  sb.classList.toggle('open');
-  ov.classList.toggle('show');
+  const isOpen=sb.classList.contains('open');
+  if(isOpen){
+    sb.classList.remove('open');
+    document.getElementById('mainContent').onclick=null;
+    document.getElementById('mainContent').style.opacity='1';
+  } else {
+    sb.classList.add('open');
+    // Close when clicking main content
+    setTimeout(()=>{
+      document.getElementById('mainContent').onclick=function(){window.closeSidebar();};
+      document.getElementById('mainContent').style.opacity='0.5';
+    },300);
+  }
 };
 window.closeSidebar=function(){
   document.getElementById('sidebar').classList.remove('open');
-  document.getElementById('overlay').classList.remove('show');
+  const mc=document.getElementById('mainContent');
+  if(mc){mc.onclick=null;mc.style.opacity='1';}
 };
 function toggleSidebar(){
   const sb=document.getElementById('sidebar');
@@ -1147,7 +1159,6 @@ function toggleSidebar(){
 }
 function closeSidebar(){
   document.getElementById('sidebar').classList.remove('open');
-  document.getElementById('overlay').classList.remove('show');
 }
 
 // ====== NOTIFICATIONS ======
