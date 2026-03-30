@@ -507,7 +507,7 @@ td{padding:11px 14px;color:var(--text);vertical-align:middle}
 <div class="modalOverlay" id="forgotModal" style="display:none">
   <div class="modalCard">
     <h2>🔑 Reset Password</h2>
-    <p style="font-size:13px;color:var(--text2);margin-bottom:16px">Email ma reset link pathaincha.</p>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:16px">Email ma reset link aunechha.</p>
     <div class="field"><label>Email</label><input type="email" id="resetEmail" placeholder="Email haalnuhos"/></div>
     <div class="modalActions">
       <button class="btnGhost" onclick="document.getElementById('forgotModal').style.display='none'">Cancel</button>
@@ -1046,7 +1046,7 @@ document.getElementById('loginPass').addEventListener('keydown',e=>e.key==='Ente
 function showErr(msg){const e=document.getElementById('loginErr');e.textContent=msg;e.style.display='block';}
 
 async function doLogout(){
-  if(!confirm('Logout garnu huncha?'))return;
+  if(!confirm('Logout garne ho?'))return;
   if(notifUnsub)notifUnsub();
   if(chatUnsub)chatUnsub();
   await auth.signOut();
@@ -1211,7 +1211,7 @@ function listenNotifs(){
     // Update dropdown
     const list=document.getElementById('notifDropList');
     if(list){
-      list.innerHTML=merged.length===0?'<div class="empty">Kुनै notification छैन</div>':
+      list.innerHTML=merged.length===0?'<div class="empty">कुनै पनि notification छैन</div>':
         merged.slice(0,10).map(n=>`<div class="notifItem${!n.readBy?.includes(currentUser.uid)?' unread':''}">
           <span style="font-size:18px">${n.type==='success'?'✅':n.type==='warning'?'⚠️':n.type==='error'?'❌':'ℹ️'}</span>
           <div><div class="nmsg">${n.msg}</div><div class="ntime">${n.createdAt?.toDate?fmtTime(n.createdAt.toDate()):''}</div></div>
@@ -1325,7 +1325,7 @@ function renderPage(page){
     console.error('Page error:',e);
     c.innerHTML=`<div style="padding:24px;text-align:center;color:#f87171">
       <div style="font-size:32px;margin-bottom:12px">⚠️</div>
-      <div style="font-weight:700;margin-bottom:8px">Page load garna sakiena</div>
+      <div style="font-weight:700;margin-bottom:8px">Page load garna sakiyena</div>
       <div style="font-size:12px;color:#888;margin-bottom:16px">${e.message||'Unknown error'}</div>
       <button onclick="navigate('dashboard')" style="background:var(--gold);color:#000;border:none;padding:10px 20px;border-radius:10px;font-weight:700;cursor:pointer">← Dashboard</button>
     </div>`;
@@ -1393,7 +1393,7 @@ async function renderDashboard(){
           <div class="cardHead">Recent Transactions <span class="ch-badge">${recent.length} records</span></div>
           <div class="tableWrap"><table>
             <thead><tr><th>Date</th><th>Category</th><th>Member</th><th>Amount</th><th>Type</th></tr></thead>
-            <tbody>${recent.length===0?`<tr><td colspan="5" class="empty">Kुनै transaction छैन</td></tr>`:
+            <tbody>${recent.length===0?`<tr><td colspan="5" class="empty">कुनै पनि transaction छैन</td></tr>`:
               recent.map(t=>`<tr>
                 <td>${NepaliDate.convert(new Date(t.date||Date.now())).str||t.date}</td>
                 <td>${t.category||'—'}</td><td>${t.memberName||'—'}</td>
@@ -1423,7 +1423,7 @@ async function renderDashboard(){
 
       c.innerHTML=`
         <div class="pageTitle"><span>📊</span>My Dashboard</div>
-        ${lDue>0||fines>0?`<div class="dueAlert">⚠️ Timilai ${fmt(lDue+fines)} tirna baki cha!</div>`:''}
+        ${lDue>0||fines>0?`<div class="dueAlert">⚠️ तपाईको ${fmt(lDue+fines)} ऋण तिर्न बाँकी छ।!</div>`:''}
         ${anns.map(a=>`<div class="announcement${a.pinned?' pinned':''}">
           <div class="aTitle">${a.pinned?'📌 ':''} ${a.title}</div>
           <div class="aBody">${a.body}</div>
@@ -1439,7 +1439,7 @@ async function renderDashboard(){
           <div class="cardHead">Recent Transactions</div>
           <div class="tableWrap"><table>
             <thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Type</th></tr></thead>
-            <tbody>${myTxSnap.docs.length===0?`<tr><td colspan="4" class="empty">Kुनै transaction छैन</td></tr>`:
+            <tbody>${myTxSnap.docs.length===0?`<tr><td colspan="4" class="empty">कुनै पनि transaction छैन</td></tr>`:
               myTxSorted.slice(0,5).map(t=>{return`<tr>
                 <td>${NepaliDate.convert(new Date(t.date||Date.now())).str}</td>
                 <td>${t.category||'—'}</td>
@@ -1475,7 +1475,7 @@ async function renderAnnouncements(){
         </div>
         <div class="formActions"><button class="btnSm" onclick="saveAnn()">Post Announcement</button></div>
       </div>`:''}
-      ${anns.length===0?'<div class="card"><div class="empty">Kुनै announcement छैन</div></div>':
+      ${anns.length===0?'<div class="card"><div class="empty">कुनै पनि announcement छैन</div></div>':
         anns.map(a=>`<div class="announcement${a.pinned?' pinned':''}">
           <div style="display:flex;justify-content:space-between;align-items:flex-start">
             <div class="aTitle">${a.pinned?'📌 ':''} ${a.title}</div>
@@ -1545,7 +1545,7 @@ async function renderTransactions(){
       <div class="card">
         <div class="tableWrap"><table>
           <thead><tr><th>Date (BS)</th><th>Type</th><th>Category</th><th>Method</th><th>Member</th><th>Note</th><th>Amount</th><th>Del</th></tr></thead>
-          <tbody>${txs.length===0?`<tr><td colspan="8" class="empty">Kुनै transaction छैन</td></tr>`:
+          <tbody>${txs.length===0?`<tr><td colspan="8" class="empty">कुनै पनि transaction छैन</td></tr>`:
             txs.map(t=>`<tr>
               <td>${NepaliDate.convert(new Date(t.date||Date.now())).str}</td>
               <td><span class="tag ${t.type}">${t.type}</span></td>
@@ -1630,7 +1630,7 @@ async function renderLoans(){
         <div class="formActions"><button class="btnSm" onclick="saveLoan()">Save Loan</button></div>
       </div>
       <div class="memberGrid">
-        ${loans.length===0?'<div class="empty">Kुनै loan छैन</div>':loans.map(l=>{
+        ${loans.length===0?'<div class="empty">कुनै पनि loan छैन</div>':loans.map(l=>{
           const pct=l.amount>0?Math.min(100,Math.round(((l.amount-(l.remaining??l.amount))/l.amount)*100)):0;
           return`<div class="loanCard">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
@@ -1736,7 +1736,7 @@ async function renderLoans(){
         <div>Member Signature</div>
         <div>Admin Signature</div>
       </div>
-      <div class="footer">Generated: ${NepaliDate.convert(new Date()).str} | Daju-Bhai Samuha - ESTD 2025 | Dhenjugeon, Bhaktapur</div>
+      <div class="footer">Generated: ${NepaliDate.convert(new Date()).str} | Daju-Bhai Samuha - ESTD 2025 | Dhanjugaon, Bhaktapur</div>
     </body></html>`);
     printWin.document.close();
     toast('Print window opened!');
@@ -1755,7 +1755,7 @@ async function renderLoanRequests(){
       <div class="card">
         <div class="tableWrap"><table>
           <thead><tr><th>Member</th><th>Amount</th><th>Duration</th><th>Reason</th><th>Date</th><th>Status</th><th>Action</th></tr></thead>
-          <tbody>${reqs.length===0?`<tr><td colspan="7" class="empty">Kुनै loan request छैन</td></tr>`:
+          <tbody>${reqs.length===0?`<tr><td colspan="7" class="empty">कुनै पनि loan request छैन</td></tr>`:
             reqs.map(r=>`<tr>
               <td>${r.memberName||'—'}</td>
               <td style="font-weight:700;color:var(--gold)">${fmt(r.amount)}</td>
@@ -1816,7 +1816,7 @@ async function renderLoanRequestForm(){
           <div class="field"><label>जमानतकर्ताको नाम</label><input type="text" id="lrGuarantor" placeholder="जमानतकर्ताको नाम..."/></div>
         </div>
         <div style="margin-top:16px;padding:12px;background:rgba(245,158,11,0.06);border-radius:10px;border:1px solid rgba(245,158,11,0.15);font-size:12px;color:var(--text2)">
-          ⚠️ यो निवेदन Admin द्वारा समीक्षा गरिनेछ। Approve भएपछि notification आउनेछ।
+          ⚠️ यो निवेदन Admin द्वारा समीक्षा गरिनेछ। Approve भएपछि तपाईलाई notification आउनेछ।
         </div>
         <div style="margin-top:14px"><button class="btnSm" onclick="submitLoanReq()">निवेदन पेश गर्नुहोस् →</button></div>
       </div>
@@ -1883,7 +1883,7 @@ async function renderSavings(){
       <div class="card">
         <div class="tableWrap"><table>
           <thead><tr><th>Member</th><th>Amount</th><th>Method</th><th>Date (BS)</th><th>Note</th><th>Del</th></tr></thead>
-          <tbody>${savs.length===0?`<tr><td colspan="6" class="empty">Kुनै savings छैन</td></tr>`:
+          <tbody>${savs.length===0?`<tr><td colspan="6" class="empty">कुनै पनि savings छैन</td></tr>`:
             savs.map(s=>`<tr>
               <td>${s.memberName||'—'}</td>
               <td style="font-weight:800;color:#34d399">${fmt(s.amount)}</td>
@@ -1944,7 +1944,7 @@ async function renderFines(){
       <div class="card">
         <div class="tableWrap"><table>
           <thead><tr><th>Member</th><th>Category</th><th>Amount</th><th>Reason</th><th>Date (BS)</th><th>Paid By/When</th><th>Status</th><th>Action</th></tr></thead>
-          <tbody>${fines.length===0?`<tr><td colspan="6" class="empty">Kुनै fine छैन</td></tr>`:
+          <tbody>${fines.length===0?`<tr><td colspan="6" class="empty">कुनै पनि fine छैन</td></tr>`:
             fines.map(f=>`<tr>
               <td>${f.memberName||'—'}</td>
               <td style="font-weight:800;color:#fbbf24">${fmt(f.amount)}</td>
@@ -1974,7 +1974,7 @@ async function renderFines(){
     const dateBS=NepaliDate.convert(new Date(date)).str;
     await db.collection('fines').add({memberId,memberName,amount:amt,category,reason,date,dateBS,note,status:'pending',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
     await logActivity('fine_added',`${memberName} lai ${fmt(amt)} ${category} lagayo`,{memberId,amount:amt,category,reason});
-    await addNotif(`⚠️ Timilai ${reason}: ${fmt(amt)} fine lagyo!`,'warning',memberId);
+    await addNotif(`⚠️ तपाईको  ${reason}: ${fmt(amt)} fine lagyo!`,'warning',memberId);
     toast('Fine add bhayo!');load();
   };
   window.markFinePaid=async(id,name,memberId,amt)=>{
@@ -2015,7 +2015,7 @@ async function renderInterest(){
       </div>
       <div class="card"><div class="tableWrap"><table>
         <thead><tr><th>Bank</th><th>Principal</th><th>Rate</th><th>Interest</th><th>Date (BS)</th><th>Del</th></tr></thead>
-        <tbody>${recs.length===0?`<tr><td colspan="6" class="empty">Kुनै record छैन</td></tr>`:
+        <tbody>${recs.length===0?`<tr><td colspan="6" class="empty">कुनै पनि record छैन</td></tr>`:
           recs.map(r=>`<tr>
             <td>${r.bank||'—'}</td><td>${fmt(r.principal||0)}</td>
             <td>${r.rate||0}%</td>
@@ -2069,7 +2069,7 @@ async function renderMembers(){
         <div class="formActions"><button class="btnSm" onclick="addMember()">Add Member</button></div>
       </div>
       <div class="memberGrid">
-        ${members.length===0?'<div class="empty">Kुनै member छैन</div>':
+        ${members.length===0?'<div class="empty">कुनै पनि member छैन</div>':
           members.map(m=>`<div class="memberCard">
             <div class="mhead">
               ${(m.photo&&m.photo.length>10)?`<img class="mavatar" src="${m.photo}" onerror="this.style.display='none'"/>`:
@@ -2141,13 +2141,13 @@ async function renderMembers(){
       await addNotif(`🎉 Namaskar ${name}! Daju-Bhai Samuha ma swagat cha!`,'success',uid);
       toast(`${name} add bhayo!`);load();
     }catch(e){
-      if(e.code==='auth/email-already-in-use')toast('Email already use bhaisakeko!','error');
+      if(e.code==='auth/email-already-in-use')toast('Email already use bhaisakeko chha!','error');
       else toast('Error: '+e.message,'error');
     }
   };
 
   window.sendAlert=async(id,name)=>{
-    const msg=prompt(`${name} lai k message pathaunu cha?`);
+    const msg=prompt(`${name} lai k message pathaunu huncha?`);
     if(!msg)return;
     await db.collection('notifications').add({msg:`📢 Admin: ${msg}`,type:'warning',target:id,readBy:[],createdAt:firebase.firestore.FieldValue.serverTimestamp()});
     toast(`Alert ${name} lai pathaiyo!`);
@@ -2203,7 +2203,7 @@ async function renderMeetings(){
             ${isAdmin?`<button class="btnDanger" style="padding:5px 8px;flex-shrink:0" onclick="delMeeting('${m.id}')">🗑</button>`:''}
           </div>
         </div>`).join('')}
-      </div>`:'<div class="card"><div class="empty">📅 Kुनै upcoming meeting छैन</div></div>'}
+      </div>`:'<div class="card"><div class="empty">📅 कुनै पनि upcoming meeting छैन</div></div>'}
       ${past.length>0?`<div class="card">
         <div class="cardHead" style="color:var(--text2)">📂 Past Meetings</div>
         ${past.slice(0,5).map(m=>`<div style="padding:12px 16px;border-bottom:1px solid var(--border);opacity:0.6">
@@ -2336,7 +2336,7 @@ function renderChat(){
   db.collection('chat').orderBy('createdAt','asc').limit(60).onSnapshot(snap=>{
     const msgs=snap.docs.map(d=>({id:d.id,...d.data()}));
     const box=document.getElementById('chatMessages');if(!box)return;
-    box.innerHTML=msgs.length===0?'<div class="empty">Kुनै message छैन। Suru garnus! 👋</div>':
+    box.innerHTML=msgs.length===0?'<div class="empty">कुनै पनि message छैन। Suru garnus! 👋</div>':
       msgs.map(m=>{const mine=m.uid===currentUser.uid;return`<div class="chatMsg ${mine?'mine':'theirs'}">
         ${!mine?`<div class="sender">${m.name||'User'}</div>`:''}
         ${m.text}
@@ -2361,7 +2361,7 @@ async function renderNotifications(){
   c.innerHTML=`
     <div class="pageTitle"><span>🔔</span>All Notifications</div>
     <div class="card">
-      ${notifs.length===0?'<div class="empty">Kुनै notification छैन</div>':
+      ${notifs.length===0?'<div class="empty">कुनै पनि notification छैन</div>':
         notifs.map(n=>`<div class="notifItem">
           <span style="font-size:20px">${n.type==='success'?'✅':n.type==='warning'?'⚠️':n.type==='error'?'❌':'ℹ️'}</span>
           <div style="flex:1">
@@ -2382,7 +2382,7 @@ async function renderLoginLogs(){
     <div class="pageTitle"><span>🕐</span>Login Logs</div>
     <div class="card"><div class="tableWrap"><table>
       <thead><tr><th>Email</th><th>Date (BS)</th><th>Device</th><th>Browser</th><th>Time</th></tr></thead>
-      <tbody>${logs.length===0?`<tr><td colspan="5" class="empty">Kुनै log छैन</td></tr>`:
+      <tbody>${logs.length===0?`<tr><td colspan="5" class="empty">कुनै पनि log छैन</td></tr>`:
         logs.map(l=>`<tr>
           <td>${l.email||'—'}</td>
           <td style="color:var(--gold);font-weight:700">${l.dateBS||'—'}</td>
@@ -2406,7 +2406,7 @@ async function renderActivityLog(){
     </div>
     <div class="card"><div class="tableWrap"><table>
       <thead><tr><th>Date (BS)</th><th>Action</th><th>Description</th><th>By</th><th>Time</th></tr></thead>
-      <tbody>${logs.length===0?`<tr><td colspan="5" class="empty">Kुनै activity छैन</td></tr>`:
+      <tbody>${logs.length===0?`<tr><td colspan="5" class="empty">कुनै पनिactivity छैन</td></tr>`:
         logs.map(l=>`<tr>
           <td style="color:var(--gold);font-weight:600">${l.dateBS||'—'}</td>
           <td><span class="tag loan">${l.action||'—'}</span></td>
@@ -2459,7 +2459,7 @@ async function renderMyFees(){
   const pFines=fines.filter(f=>f.status==='pending').reduce((a,f)=>a+f.amount,0);
   c.innerHTML=`
     <div class="pageTitle"><span>💰</span>My Fees & Payments</div>
-    ${pFines>0?`<div class="dueAlert">⚠️ Timilai ${fmt(pFines)} fine tirna baki cha!</div>`:''}
+    ${pFines>0?`<div class="dueAlert">⚠️ तपाईको  ${fmt(pFines)} fine tirna baki cha!</div>`:''}
     <div class="statsGrid">
       <div class="statCard"><div class="sIcon">✅</div><div class="sVal" style="color:#4ade80">${fmt(paid)}</div><div class="sLabel">Total Paid</div></div>
       <div class="statCard"><div class="sIcon">⚠️</div><div class="sVal" style="color:#f87171">${fmt(pFines)}</div><div class="sLabel">Pending Fines</div></div>
@@ -2469,7 +2469,7 @@ async function renderMyFees(){
       <div class="cardHead">Transaction History</div>
       <div class="tableWrap"><table>
         <thead><tr><th>Date (BS)</th><th>Category</th><th>Method</th><th>Amount</th></tr></thead>
-        <tbody>${txs.length===0?`<tr><td colspan="4" class="empty">Kुनै transaction छैन</td></tr>`:
+        <tbody>${txs.length===0?`<tr><td colspan="4" class="empty">कुनै पनिtransaction छैन</td></tr>`:
           txs.map(t=>`<tr>
             <td>${t.dateBS||NepaliDate.convert(new Date(t.date||Date.now())).str}</td>
             <td>${t.category||'—'}</td>
@@ -2483,7 +2483,7 @@ async function renderMyFees(){
       <div class="cardHead">My Fines</div>
       <div class="tableWrap"><table>
         <thead><tr><th>Reason</th><th>Amount</th><th>Date (BS)</th><th>Status</th></tr></thead>
-        <tbody>${fines.length===0?`<tr><td colspan="4" class="empty">Kुनै fine छैन 🎉</td></tr>`:
+        <tbody>${fines.length===0?`<tr><td colspan="4" class="empty">कुनै पनिfine छैन 🎉</td></tr>`:
           fines.map(f=>`<tr>
             <td>${f.reason||'—'}</td>
             <td style="font-weight:800;color:#fbbf24">${fmt(f.amount)}</td>
@@ -2505,7 +2505,7 @@ async function viewLoanHistory(loanId,name){
     <h2>💳 ${name} — Payment History</h2>
     <div class="tableWrap"><table>
       <thead><tr><th>Date (BS)</th><th>Total</th><th>Principal</th><th>Interest</th><th>Method</th><th>Remaining</th></tr></thead>
-      <tbody>${payments.length===0?`<tr><td colspan="6" class="empty">Kुनै payment छैन</td></tr>`:
+      <tbody>${payments.length===0?`<tr><td colspan="6" class="empty">कुनै पनिpayment छैन</td></tr>`:
         payments.map(p=>`<tr>
           <td>${p.dateBS||p.date||'—'}</td>
           <td style="font-weight:800;color:#4ade80">${fmt(p.amount)}</td>
@@ -2528,13 +2528,13 @@ async function renderMyLoans(){
   const due=loans.filter(l=>l.status!=='paid').reduce((a,l)=>a+(l.remaining||0),0);
   c.innerHTML=`
     <div class="pageTitle"><span>🏦</span>My Loans</div>
-    ${due>0?`<div class="dueAlert">⚠️ Timilai ${fmt(due)} loan tirna baki cha!</div>`:''}
+    ${due>0?`<div class="dueAlert">⚠️ तपाईको  ${fmt(due)} लोन तिर्न बाँकि छ।!</div>`:''}
     <div class="statsGrid" style="grid-template-columns:repeat(2,1fr);max-width:320px">
       <div class="statCard"><div class="sIcon">🏦</div><div class="sVal" style="color:#f87171">${fmt(due)}</div><div class="sLabel">Total Due</div></div>
       <div class="statCard"><div class="sIcon">📋</div><div class="sVal">${loans.length}</div><div class="sLabel">Total Loans</div></div>
     </div>
     <div class="memberGrid">
-      ${loans.length===0?'<div class="empty">Kुनै loan छैन 🎉</div>':loans.map(l=>{
+      ${loans.length===0?'<div class="empty">कुनै पनिloan छैन 🎉</div>':loans.map(l=>{
         const pct=l.amount>0?Math.min(100,Math.round(((l.amount-(l.remaining??l.amount))/l.amount)*100)):0;
         return`<div class="loanCard">
           <div style="display:flex;justify-content:space-between;margin-bottom:8px">
@@ -2567,7 +2567,7 @@ async function renderMySavings(){
     </div>
     <div class="card"><div class="tableWrap"><table>
       <thead><tr><th>Date (BS)</th><th>Amount</th><th>Method</th><th>Note</th></tr></thead>
-      <tbody>${savs.length===0?`<tr><td colspan="4" class="empty">Kुनै savings record छैन</td></tr>`:
+      <tbody>${savs.length===0?`<tr><td colspan="4" class="empty">कुनै पनिsavings record छैन</td></tr>`:
         savs.map(s=>`<tr>
           <td>${s.dateBS||NepaliDate.convert(new Date(s.date||Date.now())).str}</td>
           <td style="font-weight:800;color:#34d399">${fmt(s.amount)}</td>
