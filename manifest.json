@@ -1,7 +1,6 @@
 {
   "name": "दाजुभाइ समूह Finance",
   "short_name": "DBS Finance",
-  "description": "Daju-Bhai Samuha Club Financial Management",
   "start_url": "/daju-bhai-samuha/",
   "scope": "/daju-bhai-samuha/",
   "display": "standalone",
@@ -12,11 +11,6 @@
     {
       "src": "https://raw.githubusercontent.com/googlesamples/web-fundamentals/master/fundamentals/web-app-manifest/images/touch/homescreen192.png",
       "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "https://raw.githubusercontent.com/googlesamples/web-fundamentals/master/fundamentals/web-app-manifest/images/touch/homescreen512.png",
-      "sizes": "512x512",
       "type": "image/png"
     }
   ]
