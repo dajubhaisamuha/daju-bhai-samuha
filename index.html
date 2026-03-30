@@ -1780,13 +1780,13 @@ async function renderLoanRequests(){
     const due=prompt('Due date (YYYY-MM-DD):','')||'';
     await db.collection('loanRequests').doc(id).update({status:'approved',approvedAt:firebase.firestore.FieldValue.serverTimestamp()});
     await db.collection('loans').add({memberId,memberName,amount,remaining:amount,rate:Number(rate),issueDate:todayStr(),dueDate:due,note:'Loan request approved',status:'active',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
-    await addNotif(`🎉 Timilro Rs.${amount} ko loan request approve bhayo!`,'success',memberId);
+    await addNotif(`🎉 Tapaiko Rs.${amount} ko loan request approve bhayo!`,'success',memberId);
     toast(`${memberName} ko loan approved!`);load();
   };
   window.rejectLoanReq=async(id,memberId,memberName)=>{
     const reason=prompt('Rejection reason:')||'';
     await db.collection('loanRequests').doc(id).update({status:'rejected',rejectionReason:reason,rejectedAt:firebase.firestore.FieldValue.serverTimestamp()});
-    await addNotif(`❌ Timilro loan request reject bhayo. ${reason?'Reason: '+reason:''}`,'error',memberId);
+    await addNotif(`❌ Tapaiko loan request reject bhayo. ${reason?'Reason: '+reason:''}`,'error',memberId);
     toast(`${memberName} ko loan rejected!`,'error');load();
   };
 }
