@@ -1061,21 +1061,26 @@ async function doResetPassword(){
 // ====== SIDEBAR ======
 const adminLinks=[
   {id:'dashboard',icon:'📊',label:'Dashboard'},
-  {id:'announcements',icon:'📢',label:'Announcements'},
-  {id:'transactions',icon:'💳',label:'Transactions'},
-  {id:'loans',icon:'🏦',label:'Loans'},
-  {id:'loanrequests',icon:'📋',label:'Loan Requests'},
-  {id:'savings',icon:'🐷',label:'Savings'},
-  {id:'fines',icon:'⚠️',label:'Fines & Dues'},
-  {id:'interest',icon:'🏛️',label:'Bank Interest'},
-  {id:'members',icon:'👥',label:'Members'},
-  {id:'meetings',icon:'📅',label:'Meetings'},
-  {id:'reports',icon:'📈',label:'Reports'},
-  {id:'chat',icon:'💬',label:'Group Chat',badge:'chatBadge'},
-  {id:'notifications',icon:'🔔',label:'Notifications',badge:'notifSideBadge'},
-  {id:'loginlogs',icon:'🕐',label:'Login Logs'},
-  {id:'pinsettings',icon:'🔐',label:'PIN Settings'},
+  {id:'announcements',icon:'📢',label:'सूचना'},
+  {id:'transactions',icon:'💳',label:'कारोबार'},
+  {id:'loans',icon:'🏦',label:'ऋण'},
+  {id:'loanrequests',icon:'📋',label:'ऋण अनुरोध'},
+  {id:'payrequests',icon:'💸',label:'भुक्तानी अनुरोध'},
+  {id:'savings',icon:'🐷',label:'बचत'},
+  {id:'fines',icon:'⚠️',label:'जरिवाना'},
+  {id:'interest',icon:'🏛️',label:'बैंक ब्याज'},
+  {id:'addmember',icon:'➕',label:'सदस्य थप्नुहोस्'},
+  {id:'memberlist',icon:'👥',label:'सदस्य सूची'},
+  {id:'meetings',icon:'📅',label:'बैठक'},
+  {id:'reports',icon:'📈',label:'रिपोर्ट'},
+  {id:'annualreport',icon:'📊',label:'वार्षिक रिपोर्ट'},
+  {id:'splitexpense',icon:'💰',label:'खर्च विभाजन'},
+  {id:'bankrates',icon:'🏦',label:'बैंक दर'},
+  {id:'chat',icon:'💬',label:'समूह च्याट',badge:'chatBadge'},
+  {id:'notifications',icon:'🔔',label:'सूचनाहरू',badge:'notifSideBadge'},
+  {id:'loginlogs',icon:'🕐',label:'Login Log'},
   {id:'activitylog',icon:'📝',label:'Activity Log'},
+  {id:'pinsettings',icon:'🔐',label:'PIN Settings'},
 ];
 const memberLinks=[
   {id:'dashboard',icon:'📊',label:'Dashboard'},
@@ -1309,6 +1314,14 @@ function renderPage(page){
     notifications:renderNotifications,
     loginlogs:()=>isAdmin?renderLoginLogs():navigate('dashboard'),
     activitylog:()=>isAdmin?renderActivityLog():navigate('dashboard'),
+    addmember:()=>isAdmin?renderAddMember():navigate('dashboard'),
+    memberlist:()=>isAdmin?renderMemberList():navigate('dashboard'),
+    memberprofile:()=>isAdmin?renderMemberProfile():navigate('dashboard'),
+    payrequests:()=>isAdmin?renderPayRequests():navigate('dashboard'),
+    payrequest:()=>!isAdmin?renderPayRequest():navigate('dashboard'),
+    annualreport:()=>isAdmin?renderAnnualReport():navigate('dashboard'),
+    splitexpense:()=>isAdmin?renderSplitExpense():navigate('dashboard'),
+    bankrates:renderBankRates,
     addmember:()=>isAdmin?renderAddMember():navigate('dashboard'),
     memberlist:()=>isAdmin?renderMemberList():navigate('dashboard'),
     memberprofile:()=>isAdmin?renderMemberProfile():navigate('dashboard'),
@@ -1868,7 +1881,12 @@ async function renderSavings(){
   const members=mSnap.docs.map(d=>({id:d.id,...d.data()}));
   async function load(){
     const snap=await db.collection('savings').get().catch(()=>({docs:[]}));
-    const savs=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'')>(a.date||'')?1:-1);
+    const savs=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>{
+      // Sort by AD date field (YYYY-MM-DD) for correct chronological order
+      const da=a.date||'0000-00-00';
+      const db2=b.date||'0000-00-00';
+      return db2>da?1:db2<da?-1:0;
+    });
     const total=savs.reduce((a,s)=>a+s.amount,0);
     c.innerHTML=`
       <div class="pageTitle"><span>🐷</span>Savings</div>
@@ -2882,24 +2900,33 @@ async function renderPayRequests(){
 
 // ====== PHASE 2: QR CODE ======
 async function showMemberQR(memberId,memberName){
+  // Get member data
+  const doc=await db.collection('users').doc(memberId).get();
+  const m=doc.data()||{};
   const modal=document.createElement('div');
   modal.className='modalOverlay';
-  const qrData=`${window.location.origin}${window.location.pathname}?member=${memberId}`;
-  modal.innerHTML=`<div class="modalCard" style="text-align:center;max-width:320px">
-    <h2>🔐 ${memberName} को QR Code</h2>
-    <div id="qrContainer" style="margin:20px auto;width:200px;height:200px;background:#fff;border-radius:12px;padding:10px;display:flex;align-items:center;justify-content:center">
-      <div style="color:#888;font-size:12px">QR Generate हुँदैछ...</div>
+  // QR data = member info as text
+  const qrText=`दाजुभाइ समूह\nनाम: ${m.name||memberName}\nID: ${m.memberId||'—'}\nफोन: ${m.phone||'—'}\nEmail: ${m.email||'—'}`;
+  const qrUrl=`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrText)}&bgcolor=ffffff&color=000000&margin=10`;
+  modal.innerHTML=`<div class="modalCard" style="text-align:center;max-width:340px">
+    <h2>🔐 ${m.name||memberName}</h2>
+    <div style="background:#fff;border-radius:16px;padding:16px;margin:16px auto;width:fit-content;box-shadow:0 4px 20px rgba(0,0,0,0.3)">
+      <img src="${qrUrl}" style="width:200px;height:200px;display:block" 
+        onerror="this.parentElement.innerHTML='<div style=\'padding:20px;color:#888;font-size:12px\'>QR load bhayena<br/>Internet check garnus</div>'"/>
     </div>
-    <div style="font-size:12px;color:var(--text2);margin:10px 0">Member ID: ${memberId.substring(0,8)}...</div>
-    <div class="modalActions"><button class="btnGhost" onclick="this.closest('.modalOverlay').remove()">Close</button></div>
+    <div style="background:var(--card2);border-radius:10px;padding:12px;margin:12px 0;text-align:left;font-size:12px;border:1px solid var(--border)">
+      <div><b style="color:var(--gold)">नाम:</b> ${m.name||'—'}</div>
+      <div><b style="color:var(--gold)">सदस्य ID:</b> ${m.memberId||'—'}</div>
+      <div><b style="color:var(--gold)">फोन:</b> ${m.phone||'—'}</div>
+      <div><b style="color:var(--gold)">Email:</b> ${m.email||'—'}</div>
+    </div>
+    <p style="font-size:11px;color:var(--text2)">यो QR scan गरेर member को जानकारी हेर्न सकिन्छ</p>
+    <div class="modalActions">
+      <button class="btnGhost" onclick="this.closest('.modalOverlay').remove()">Close</button>
+      <button class="btnSm" onclick="shareViaWhatsApp('दाजुभाइ समूह Member Card\nनाम: ${m.name||memberName}\nID: ${m.memberId||'—'}\nफोन: ${m.phone||'—'}')">📱 WhatsApp</button>
+    </div>
   </div>`;
   document.body.appendChild(modal);
-  // Generate QR using Google Charts API
-  const qrImg=document.createElement('img');
-  qrImg.src=`https://chart.googleapis.com/chart?chs=180x180&cht=qr&chl=${encodeURIComponent(qrData)}&choe=UTF-8`;
-  qrImg.style.cssText='width:180px;height:180px;border-radius:8px';
-  qrImg.onload=()=>{document.getElementById('qrContainer').innerHTML='';document.getElementById('qrContainer').appendChild(qrImg);};
-  qrImg.onerror=()=>{document.getElementById('qrContainer').innerHTML=`<div style="font-size:11px;color:#888;word-break:break-all">${memberId}</div>`;};
 }
 window.showMemberQR=showMemberQR;
 
