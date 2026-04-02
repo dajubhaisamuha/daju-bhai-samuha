@@ -457,6 +457,9 @@ td{padding:11px 14px;color:var(--text);vertical-align:middle}
 .announcement .aBody{font-size:13px;color:var(--text2);margin-top:6px;line-height:1.6}
 .announcement .aMeta{font-size:10px;color:#555;margin-top:8px}
 .pinned{border-left:4px solid var(--gold)}
+.floatingChat{position:fixed;bottom:80px;right:20px;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#f59e0b,#fbbf24);color:#000;border:none;font-size:22px;box-shadow:0 4px 20px rgba(245,158,11,0.4);z-index:90;cursor:pointer;display:none;align-items:center;justify-content:center;transition:all 0.2s}
+.floatingChat:hover{transform:scale(1.1)}
+.fChatBadge{position:absolute;top:-3px;right:-3px;background:#ef4444;color:#fff;font-size:9px;font-weight:800;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center}
 </style>
 </head>
 <body>
@@ -595,6 +598,9 @@ td{padding:11px 14px;color:var(--text);vertical-align:middle}
 </div>
 
 <div id="toast"></div>
+<button class="floatingChat" id="floatingChatBtn" onclick="navigate('chat')" title="Group Chat">
+  💬<span class="fChatBadge" id="fChatBadge" style="display:none">0</span>
+</button>
 <div id="overlay" style="display:none"></div>
 
 <script>
@@ -770,16 +776,11 @@ function updateClock(){
     const now=new Date();
     const np=NepaliDate.convert(now);
     const el=document.getElementById('nepaliDateTop');
-    const h=String(now.getHours()).padStart(2,'0');
-    const m=String(now.getMinutes()).padStart(2,'0');
-    const t=h+':'+m;
-    if(el) el.textContent=(np.str||'--')+' • '+(np.day||'--')+' • '+t;
-  }catch(e){
-    const el=document.getElementById('nepaliDateTop');
-    if(el) el.textContent='';
-  }
+    if(el) el.textContent=(np.str||'--')+' • '+(np.day||'--')+' • '+String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+  }catch(e){}
 }
-setInterval(updateClock,60000);
+setInterval(updateClock,30000);
+updateClock();
 updateClock();
 
 // Date modal
@@ -932,30 +933,25 @@ function updatePinDots(){
 }
 function checkPin(){
   const saved=localStorage.getItem('appPin');
-  // Load member-wise summary
-  db.collection('users').where('role','==','member').get().then(mSnap=>{
-    const members=mSnap.docs.map(d=>({id:d.id,...d.data()}));
-    Promise.all(members.map(m=>Promise.all([
-      db.collection('savings').where('memberId','==',m.id).get().catch(()=>({docs:[]})),
-      db.collection('loans').where('memberId','==',m.id).get().catch(()=>({docs:[]})),
-      db.collection('fines').where('memberId','==',m.id).where('status','==','paid').get().catch(()=>({docs:[]})),
-    ]))).then(results=>{
-      const tbody=document.getElementById('memberSummaryBody');
-      if(!tbody)return;
-      tbody.innerHTML=members.map((m,i)=>{
-        const [sSnap,lSnap,fSnap]=results[i];
-        const totalSav=sSnap.docs.reduce((a,d)=>a+(d.data().amount||0),0);
-        const loanRem=lSnap.docs.filter(d=>d.data().status!=='paid').reduce((a,d)=>a+(d.data().remaining||0),0);
-        const finesPaid=fSnap.docs.reduce((a,d)=>a+(d.data().amount||0),0);
+  // Member summary - use already loaded data
+  try{
+    const mSnap2=await db.collection('users').where('role','==','member').get();
+    const tbody=document.getElementById('memberSummaryBody');
+    if(tbody){
+      tbody.innerHTML=mSnap2.docs.map(d=>{
+        const m=d.data();const id=d.id;
+        const ms=savs.filter(s=>s.memberId===id).reduce((a,s)=>a+s.amount,0);
+        const ml=loans.filter(l=>l.memberId===id&&l.status!=='paid').reduce((a,l)=>a+(l.remaining||0),0);
+        const mf=fines.filter(f=>f.memberId===id&&f.status==='pending').reduce((a,f)=>a+f.amount,0);
         return`<tr>
           <td style="font-weight:700">${m.name||'—'}</td>
-          <td style="color:#34d399;font-weight:700">${fmt(totalSav)}</td>
-          <td style="color:${loanRem>0?'#f87171':'#4ade80'};font-weight:700">${fmt(loanRem)}</td>
-          <td style="color:#fbbf24;font-weight:700">${fmt(finesPaid)}</td>
+          <td style="color:#34d399;font-weight:700">${fmt(ms)}</td>
+          <td style="color:${ml>0?'#f87171':'#4ade80'};font-weight:700">${fmt(ml)}</td>
+          <td style="color:${mf>0?'#fbbf24':'#4ade80'};font-weight:700">${fmt(mf)}</td>
         </tr>`;
       }).join('');
-    });
-  });
+    }
+  }catch(e){}
   
   setTimeout(()=>{
     if(!saved||pinInput===saved){
@@ -1017,7 +1013,8 @@ function showApp(){
   listenNotifs();listenChatBadge();
   updateClock();
   showPinLock();
-  setTimeout(checkBirthdays, 3000);
+  const fb=document.getElementById('floatingChatBtn');
+  if(fb)fb.style.display='flex';
   navigate('dashboard');
 }
 
@@ -1061,40 +1058,28 @@ async function doResetPassword(){
 // ====== SIDEBAR ======
 const adminLinks=[
   {id:'dashboard',icon:'📊',label:'Dashboard'},
-  {id:'announcements',icon:'📢',label:'सूचना'},
   {id:'transactions',icon:'💳',label:'कारोबार'},
   {id:'loans',icon:'🏦',label:'ऋण'},
-  {id:'loanrequests',icon:'📋',label:'ऋण अनुरोध'},
-  {id:'payrequests',icon:'💸',label:'भुक्तानी अनुरोध'},
   {id:'savings',icon:'🐷',label:'बचत'},
   {id:'fines',icon:'⚠️',label:'जरिवाना'},
-  {id:'interest',icon:'🏛️',label:'बैंक ब्याज'},
-  {id:'addmember',icon:'➕',label:'सदस्य थप्नुहोस्'},
-  {id:'memberlist',icon:'👥',label:'सदस्य सूची'},
-  {id:'meetings',icon:'📅',label:'बैठक'},
+  {id:'members',icon:'👥',label:'सदस्यहरू'},
+  {id:'meetings',icon:'📅',label:'बैठक / सूचना'},
   {id:'reports',icon:'📈',label:'रिपोर्ट'},
   {id:'annualreport',icon:'📊',label:'वार्षिक रिपोर्ट'},
-  {id:'splitexpense',icon:'💰',label:'खर्च विभाजन'},
-  {id:'bankrates',icon:'🏦',label:'बैंक दर'},
-  {id:'chat',icon:'💬',label:'समूह च्याट',badge:'chatBadge'},
   {id:'notifications',icon:'🔔',label:'सूचनाहरू',badge:'notifSideBadge'},
   {id:'loginlogs',icon:'🕐',label:'Login Log'},
-  {id:'activitylog',icon:'📝',label:'Activity Log'},
-  {id:'pinsettings',icon:'🔐',label:'PIN Settings'},
+  {id:'settings',icon:'⚙️',label:'Settings'},
 ];
 const memberLinks=[
   {id:'dashboard',icon:'📊',label:'Dashboard'},
-  {id:'announcements',icon:'📢',label:'Announcements'},
-  {id:'myfees',icon:'💰',label:'My Fees'},
-  {id:'myloans',icon:'🏦',label:'My Loans'},
-  {id:'loanrequest',icon:'📝',label:'Loan Request'},
-  {id:'mysavings',icon:'🐷',label:'My Savings'},
-  {id:'meetings',icon:'📅',label:'Meetings'},
-  {id:'chat',icon:'💬',label:'Group Chat',badge:'chatBadge'},
-  {id:'notifications',icon:'🔔',label:'Notifications',badge:'notifSideBadge'},
-  {id:'profile',icon:'👤',label:'My Profile'},
-  {id:'pinsettings',icon:'🔐',label:'PIN Settings'},
-  {id:'activitylog',icon:'📝',label:'Activity Log'},
+  {id:'myfees',icon:'💰',label:'मेरो शुल्क'},
+  {id:'myloans',icon:'🏦',label:'मेरो ऋण'},
+  {id:'mysavings',icon:'🐷',label:'मेरो बचत'},
+  {id:'payrequest',icon:'💸',label:'भुक्तानी अनुरोध'},
+  {id:'meetings',icon:'📅',label:'बैठक / सूचना'},
+  {id:'notifications',icon:'🔔',label:'सूचनाहरू',badge:'notifSideBadge'},
+  {id:'profile',icon:'👤',label:'मेरो Profile'},
+  {id:'settings',icon:'⚙️',label:'Settings'},
 ];
 
 function setupSidebar(){
@@ -1279,6 +1264,8 @@ function listenChatBadge(){
         }).length;
         badge.textContent=unread>9?'9+':unread;
         badge.style.display=unread>0?'inline-block':'none';
+        const fb2=document.getElementById('fChatBadge');
+        if(fb2){fb2.textContent=unread>9?'9+':unread;fb2.style.display=unread>0?'flex':'none';}
       }catch(e){console.log('chat badge err',e);}
     });
   }catch(e){console.log('listenChatBadge err',e);}
@@ -1300,43 +1287,26 @@ function renderPage(page){
   const isAdmin=currentUserData?.role==='admin';
   const pages={
     dashboard:renderDashboard,
-    announcements:renderAnnouncements,
     transactions:()=>isAdmin?renderTransactions():navigate('dashboard'),
     loans:()=>isAdmin?renderLoans():navigate('dashboard'),
-    loanrequests:()=>isAdmin?renderLoanRequests():navigate('dashboard'),
     savings:()=>isAdmin?renderSavings():navigate('dashboard'),
     fines:()=>isAdmin?renderFines():navigate('dashboard'),
-    interest:()=>isAdmin?renderInterest():navigate('dashboard'),
-    members:()=>isAdmin?renderMemberList():navigate('dashboard'),
-    meetings:renderMeetings,
+    members:()=>isAdmin?renderMembersHub():navigate('dashboard'),
+    memberprofile:()=>isAdmin?renderMemberProfile():navigate('dashboard'),
+    meetings:renderMeetingsHub,
     reports:()=>isAdmin?renderReports():navigate('dashboard'),
-    chat:renderChat,
     notifications:renderNotifications,
     loginlogs:()=>isAdmin?renderLoginLogs():navigate('dashboard'),
-    activitylog:()=>isAdmin?renderActivityLog():navigate('dashboard'),
-    addmember:()=>isAdmin?renderAddMember():navigate('dashboard'),
-    memberlist:()=>isAdmin?renderMemberList():navigate('dashboard'),
-    memberprofile:()=>isAdmin?renderMemberProfile():navigate('dashboard'),
-    payrequests:()=>isAdmin?renderPayRequests():navigate('dashboard'),
-    payrequest:()=>!isAdmin?renderPayRequest():navigate('dashboard'),
-    annualreport:()=>isAdmin?renderAnnualReport():navigate('dashboard'),
-    splitexpense:()=>isAdmin?renderSplitExpense():navigate('dashboard'),
-    bankrates:renderBankRates,
-    addmember:()=>isAdmin?renderAddMember():navigate('dashboard'),
-    memberlist:()=>isAdmin?renderMemberList():navigate('dashboard'),
-    memberprofile:()=>isAdmin?renderMemberProfile():navigate('dashboard'),
-    payrequest:()=>!isAdmin?renderPayRequest():navigate('dashboard'),
-    payrequests:()=>isAdmin?renderPayRequests():navigate('dashboard'),
-    annualreport:()=>isAdmin?renderAnnualReport():navigate('dashboard'),
-    splitexpense:()=>isAdmin?renderSplitExpense():navigate('dashboard'),
-    bankrates:renderBankRates,
-    pinsettings:renderPinSettings,
+    settings:renderSettings,
     myfees:renderMyFees,
     myloans:renderMyLoans,
-    loanrequest:renderLoanRequestForm,
     mysavings:renderMySavings,
+    payrequest:()=>!isAdmin?renderPayRequest():navigate('dashboard'),
+    payrequests:()=>isAdmin?renderPayRequestsPage():navigate('dashboard'),
     profile:renderProfile,
-    announcements:renderAnnouncements,
+    chat:renderChat,
+    activitylog:()=>isAdmin?renderActivityLog():navigate('dashboard'),
+    annualreport:()=>isAdmin?renderAnnualReport():navigate('dashboard'),
   };
   try{
     if(pages[page]) pages[page]();
@@ -1394,8 +1364,17 @@ async function renderDashboard(){
 
       c.innerHTML=`
         <div class="pageTitle"><span>📊</span>Dashboard</div>
-        ${pendingLR>0?`<div class="dueAlert">📋 ${pendingLR} loan request pending cha! <button class="btnSm" style="margin-left:auto;padding:6px 12px;font-size:11px" onclick="navigate('loanrequests')">View →</button></div>`:''}
-        ${anns.length>0?anns.map(a=>`<div class="announcement${a.pinned?' pinned':''}">
+        ${pendingLR>0?`<div class="dueAlert" style="cursor:pointer" onclick="navigate('loans')">📋 ${pendingLR} ऋण अनुरोध pending छ! <button class="btnSm" style="margin-left:auto;padding:6px 12px;font-size:11px">View →</button></div>`:''}
+        ${anns.length>0?`<div style="background:linear-gradient(135deg,rgba(245,158,11,0.08),rgba(34,197,94,0.04));border:1px solid rgba(245,158,11,0.2);border-radius:12px;padding:12px 16px;margin-bottom:16px;overflow:hidden">
+          <div style="font-size:11px;color:var(--gold);font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">📌 Bulletin Board</div>
+          <div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:4px">
+            ${anns.map(a=>`<div onclick="navigate('meetings')" style="min-width:200px;background:rgba(0,0,0,0.2);border-radius:10px;padding:10px;cursor:pointer;border:1px solid rgba(245,158,11,0.15)">
+              <div style="font-size:12px;font-weight:700;color:var(--gold)">${a.pinned?'📌 ':'📢 '}${a.title}</div>
+              <div style="font-size:11px;color:var(--text2);margin-top:4px">${(a.body||'').substring(0,60)}${(a.body||'').length>60?'...':''}</div>
+            </div>`).join('')}
+          </div>
+        </div>`:''}
+        ${false?anns.map(a=>`<div class="announcement${a.pinned?' pinned':''}">
           <div class="aTitle">${a.pinned?'📌 ':''} ${a.title}</div>
           <div class="aBody">${a.body}</div>
           <div class="aMeta">— ${a.author||'Admin'} • ${a.createdAt?.toDate?fmtTime(a.createdAt.toDate()):''}</div>
@@ -1444,11 +1423,15 @@ async function renderDashboard(){
       c.innerHTML=`
         <div class="pageTitle"><span>📊</span>My Dashboard</div>
         ${lDue>0||fines>0?`<div class="dueAlert">⚠️ तपाईको ${fmt(lDue+fines)} ऋण तिर्न बाँकी छ।!</div>`:''}
-        ${anns.map(a=>`<div class="announcement${a.pinned?' pinned':''}">
-          <div class="aTitle">${a.pinned?'📌 ':''} ${a.title}</div>
-          <div class="aBody">${a.body}</div>
-          <div class="aMeta">— ${a.author||'Admin'} • ${a.createdAt?.toDate?fmtTime(a.createdAt.toDate()):''}</div>
-        </div>`).join('')}
+        ${anns.length>0?`<div style="background:linear-gradient(135deg,rgba(245,158,11,0.08),rgba(34,197,94,0.04));border:1px solid rgba(245,158,11,0.2);border-radius:12px;padding:12px 16px;margin-bottom:16px">
+          <div style="font-size:11px;color:var(--gold);font-weight:700;margin-bottom:8px">📌 Bulletin Board</div>
+          <div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:4px">
+            ${anns.map(a=>`<div onclick="navigate('meetings')" style="min-width:200px;background:rgba(0,0,0,0.2);border-radius:10px;padding:10px;cursor:pointer;border:1px solid rgba(245,158,11,0.15)">
+              <div style="font-size:12px;font-weight:700;color:var(--gold)">${a.pinned?'📌 ':'📢 '}${a.title}</div>
+              <div style="font-size:11px;color:var(--text2);margin-top:4px">${(a.body||'').substring(0,60)}...</div>
+            </div>`).join('')}
+          </div>
+        </div>`:''}
         <div class="statsGrid">
           <div class="statCard" onclick="navigate('myfees')" style="cursor:pointer"><div class="sIcon">✅</div><div class="sVal" style="color:#4ade80">${fmt(paid)}</div><div class="sLabel">Total Paid</div></div>
           <div class="statCard" onclick="navigate('myloans')" style="cursor:pointer"><div class="sIcon">🏦</div><div class="sVal" style="color:#f87171">${fmt(lDue)}</div><div class="sLabel">Loan Due</div></div>
@@ -1630,13 +1613,21 @@ async function renderTransactions(){
 // ====== LOANS ======
 async function renderLoans(){
   const c=document.getElementById('mainContent');
+  window._lt=window._lt||'loans';
   const mSnap=await db.collection('users').where('role','==','member').get();
   const members=mSnap.docs.map(d=>({id:d.id,...d.data()}));
+  const lrSnap2=await db.collection('loanRequests').get().catch(()=>({docs:[]}));
+  const pendingLR=lrSnap2.docs.filter(d=>d.data().status==='pending').length;
   async function load(){
     const snap=await db.collection('loans').get().catch(()=>({docs:[]}));
     const loans=snap.docs.map(d=>({id:d.id,...d.data()}));
     c.innerHTML=`
-      <div class="pageTitle"><span>🏦</span>Loans</div>
+      <div class="pageTitle"><span>🏦</span>ऋण</div>
+      <div style="display:flex;gap:8px;margin-bottom:14px">
+        <button class="pill${window._lt==='loans'?' active':''}" onclick="window._lt='loans';renderLoans()">🏦 ऋणहरू</button>
+        <button class="pill${window._lt==='req'?' active':''}" onclick="window._lt='req';renderLoans()">📋 ऋण अनुरोध${pendingLR>0?` <span class="navBadge" style="display:inline-block">${pendingLR}</span>`:''}</button>
+      </div>
+      ${window._lt==='req'?'<div id="lrInline"></div>':''}
       <div class="formCard">
         <div class="cardHead">+ New Loan</div>
         <div class="formGrid">
@@ -1676,6 +1667,27 @@ async function renderLoans(){
       </div>`;
   }
   load();
+  // Load loan requests if on req tab
+  if(window._lt==='req'){
+    const lrS=await db.collection('loanRequests').get().catch(()=>({docs:[]}));
+    const lrs=lrS.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'0')>(a.date||'0')?1:-1);
+    const lrEl=document.getElementById('lrInline');
+    if(lrEl){lrEl.innerHTML=`<div class="card"><div class="tableWrap"><table>
+      <thead><tr><th>सदस्य</th><th>रकम</th><th>कारण</th><th>मिति</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody>${lrs.length===0?`<tr><td colspan="6" class="empty">कुनै अनुरोध छैन</td></tr>`:
+        lrs.map(r=>`<tr>
+          <td>${r.memberName||'—'}</td><td style="color:var(--gold);font-weight:700">${fmt(r.amount)}</td>
+          <td>${r.reason||'—'}</td><td>${r.dateBS||r.date||'—'}</td>
+          <td><span class="tag ${r.status==='approved'?'approved':r.status==='rejected'?'rejected':'pending'}">${r.status||'pending'}</span></td>
+          <td style="display:flex;gap:4px">${r.status==='pending'?`
+            <button class="btnSm" style="font-size:10px;padding:4px 8px" onclick="approveLoanReq('${r.id}','${r.memberId}','${r.memberName||''}',${r.amount})">✅</button>
+            <button class="btnDanger" style="padding:4px 6px" onclick="rejectLoanReq('${r.id}','${r.memberId}','${r.memberName||''}')">❌</button>
+          `:'—'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div></div>`;}
+  }
+  
   window.saveLoan=async()=>{
     const memberId=document.getElementById('lMember').value;
     const amt=Number(document.getElementById('lAmt').value);
@@ -1880,13 +1892,8 @@ async function renderSavings(){
   const mSnap=await db.collection('users').where('role','==','member').get();
   const members=mSnap.docs.map(d=>({id:d.id,...d.data()}));
   async function load(){
-    const snap=await db.collection('savings').get().catch(()=>({docs:[]}));
-    const savs=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>{
-      // Sort by AD date field (YYYY-MM-DD) for correct chronological order
-      const da=a.date||'0000-00-00';
-      const db2=b.date||'0000-00-00';
-      return db2>da?1:db2<da?-1:0;
-    });
+    const snap=await db.collection('savings').orderBy('createdAt','desc').get().catch(()=>({docs:[]}));
+    const savs=snap.docs.map(d=>({id:d.id,...d.data()}));
     const total=savs.reduce((a,s)=>a+s.amount,0);
     c.innerHTML=`
       <div class="pageTitle"><span>🐷</span>Savings</div>
@@ -2364,7 +2371,7 @@ function renderChat(){
     box.innerHTML=msgs.length===0?'<div class="empty">कुनै पनि message छैन। Suru garnus! 👋</div>':
       msgs.map(m=>{const mine=m.uid===currentUser.uid;return`<div class="chatMsg ${mine?'mine':'theirs'}">
         ${!mine?`<div class="sender">${m.name||'User'}</div>`:''}
-        ${m.text}
+        ${m.type==='image'&&m.image?`<img src="${m.image}" style="max-width:180px;border-radius:8px;display:block;cursor:pointer" onclick="window.open(this.src,'_blank')"/>`:m.text||''}
         <div class="ctime">${m.createdAt?.toDate?fmtTime(m.createdAt.toDate()):''}</div>
       </div>`;}).join('');
     box.scrollTop=box.scrollHeight;
@@ -2374,7 +2381,16 @@ async function sendChat(){
   const input=document.getElementById('chatInput');
   const text=input?.value.trim();if(!text)return;
   input.value='';
-  await db.collection('chat').add({uid:currentUser.uid,name:currentUserData?.name||'User',text,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+  await db.collection('chat').add({uid:currentUser.uid,name:currentUserData?.name||'User',text,type:'text',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+}
+async function sendChatImg(){
+  const file=document.getElementById('cImg').files[0];
+  if(!file)return;
+  toast('Image पठाउँदैछ...','info');
+  const b64=await compressImg(file,500);
+  await db.collection('chat').add({uid:currentUser.uid,name:currentUserData?.name||'User',text:'📷',image:b64,type:'image',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+  document.getElementById('cImg').value='';
+  toast('Image पठाइयो!');
 }
 
 // ====== NOTIFICATIONS PAGE ======
@@ -2442,699 +2458,6 @@ async function renderActivityLog(){
       </tbody>
     </table></div></div>`;
 }
-
-// ====== ADD MEMBER (Separate Page) ======
-async function renderAddMember(){
-  const c=document.getElementById('mainContent');
-  c.innerHTML=`
-    <div class="pageTitle"><span>➕</span>नयाँ सदस्य थप्नुहोस्</div>
-    <div class="formCard">
-      <div class="cardHead">सदस्य जानकारी</div>
-      <div class="formGrid">
-        <div class="field"><label>पूरा नाम *</label><input type="text" id="mName" placeholder="सित गुरुङ"/></div>
-        <div class="field"><label>Email *</label><input type="email" id="mEmail" placeholder="sita@email.com"/></div>
-        <div class="field"><label>Password *</label><input type="password" id="mPass" placeholder="Minimum 6 characters"/></div>
-        <div class="field"><label>फोन नम्बर</label><input type="text" id="mPhone" placeholder="९८००००००००"/></div>
-        <div class="field"><label>सदस्य ID</label><input type="text" id="mId" placeholder="CLB-001"/></div>
-        <div class="field"><label>प्रवेश मिति (बि.सं.)</label><input type="text" id="mJoinBS" placeholder="२०८१-०५-१५"/></div>
-        <div class="field"><label>प्रवेश मिति (AD)</label><input type="date" id="mJoin" value="${todayStr()}"/></div>
-        <div class="field"><label>जन्ममिति</label><input type="date" id="mBirthday"/></div>
-        <div class="field"><label>ठेगाना</label><input type="text" id="mAddress" placeholder="भक्तपुर"/></div>
-        <div class="field"><label>Profile Photo</label><input type="file" id="mPhoto" accept="image/*" style="padding:8px"/></div>
-        <div class="field"><label>Verified</label><select id="mVerified"><option value="true">✅ Verified</option><option value="false">⏳ Pending</option></select></div>
-      </div>
-      <div class="formActions">
-        <button class="btnSm" onclick="addMemberFn()">✅ सदस्य थप्नुहोस्</button>
-        <button class="btnGhost" onclick="navigate('memberlist')">👥 List हेर्नुहोस्</button>
-      </div>
-    </div>`;
-
-  window.addMemberFn=async()=>{
-    const name=document.getElementById('mName').value.trim();
-    const email=document.getElementById('mEmail').value.trim();
-    const pass=document.getElementById('mPass').value;
-    const phone=document.getElementById('mPhone').value.trim();
-    const memberId=document.getElementById('mId').value.trim();
-    const joinBS=document.getElementById('mJoinBS').value.trim();
-    const joinDate=document.getElementById('mJoin').value;
-    const birthday=document.getElementById('mBirthday').value;
-    const address=document.getElementById('mAddress').value.trim();
-    const verified=document.getElementById('mVerified').value==='true';
-    const photoFile=document.getElementById('mPhoto').files[0];
-    if(!name||!email||!pass){toast('नाम, email र password आवश्यक छ!','error');return;}
-    if(pass.length<6){toast('Password कम्तीमा ६ अक्षर चाहिन्छ!','error');return;}
-    let photo='';
-    if(photoFile){
-      photo=await new Promise(res=>{
-        const img=new Image();const reader=new FileReader();
-        reader.onload=e=>{img.onload=()=>{
-          const canvas=document.createElement('canvas');
-          const max=200;let w=img.width,h=img.height;
-          if(w>h){if(w>max){h=h*max/w;w=max;}}else{if(h>max){w=w*max/h;h=max;}}
-          canvas.width=w;canvas.height=h;
-          canvas.getContext('2d').drawImage(img,0,0,w,h);
-          res(canvas.toDataURL('image/jpeg',0.7));
-        };img.src=e.target.result;};
-        reader.readAsDataURL(photoFile);
-      });
-    }
-    const joinDateNP=joinBS||(joinDate?NepaliDate.convert(new Date(joinDate)).str:'');
-    try{
-      const secondApp=firebase.initializeApp(firebase.apps[0].options,'sec_'+Date.now());
-      const secondAuth=secondApp.auth();
-      const cred=await secondAuth.createUserWithEmailAndPassword(email,pass);
-      const uid=cred.user.uid;
-      await secondAuth.signOut();await secondApp.delete();
-      await db.collection('users').doc(uid).set({
-        name,email,phone,memberId,joinDate,joinDateNP,address,
-        role:'member',status:'active',verified,photo,birthday,
-        createdAt:firebase.firestore.FieldValue.serverTimestamp()
-      });
-      await addNotif(`🎉 नमस्कार ${name}! दाजुभाइ समूहमा स्वागत छ!`,'success',uid);
-      await logActivity('member_added',`नयाँ सदस्य थपियो: ${name}`,{memberId:uid});
-      toast(`${name} सफलतापूर्वक थपियो!`);
-      navigate('memberlist');
-    }catch(e){
-      if(e.code==='auth/email-already-in-use')toast('यो Email पहिले नै प्रयोग भइसकेको छ!','error');
-      else toast('Error: '+e.message,'error');
-    }
-  };
-}
-
-// ====== MEMBER LIST (Separate Page) ======
-async function renderMemberList(){
-  const c=document.getElementById('mainContent');
-  c.innerHTML=`<div class="pageTitle"><span>👥</span>सदस्य सूची</div><div class="card"><div class="empty">Loading...</div></div>`;
-  const snap=await db.collection('users').where('role','==','member').get();
-  const members=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
-  c.innerHTML=`
-    <div class="pageTitle"><span>👥</span>सदस्य सूची (${members.length})</div>
-    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-      <button class="btnSm" onclick="navigate('addmember')">➕ नयाँ सदस्य</button>
-    </div>
-    <div class="memberGrid">
-      ${members.length===0?'<div class="empty">कुनै सदस्य छैन</div>':
-        members.map(m=>`<div class="memberCard" onclick="selectMemberProfile('${m.id}')" style="cursor:pointer">
-          <div class="mhead">
-            ${(m.photo&&m.photo.length>10)?`<img class="mavatar" src="${m.photo}" onerror="this.style.display='none'"/>`:
-              `<div class="avatar" style="width:52px;height:52px;font-size:18px">${(m.name||'U').substring(0,2).toUpperCase()}</div>`}
-            <div style="flex:1;min-width:0">
-              <div class="mname">${m.name||'—'} ${m.verified?'<span style="color:#4ade80">✅</span>':''}</div>
-              <div class="mmid">${m.memberId||'—'}</div>
-              <span class="tag ${m.status==='inactive'?'inactive':'active'}">${m.status||'active'}</span>
-            </div>
-          </div>
-          <div class="mdetails">
-            📞 ${m.phone||'—'}<br/>
-            📅 भर्ना: ${m.joinDateNP||m.joinDate||'—'}
-          </div>
-          <div class="mactions">
-            <button class="pill" onclick="event.stopPropagation();selectMemberProfile('${m.id}')">👤 Profile</button>
-            <button class="pill" onclick="event.stopPropagation();editMember('${m.id}')">✏️ Edit</button>
-            <button class="pill" onclick="event.stopPropagation();showMemberQR('${m.id}','${(m.name||'').replace(/'/g,'')}')">🔐 QR</button>
-            <button class="pill" onclick="event.stopPropagation();sendAlert('${m.id}','${(m.name||'').replace(/'/g,'')}')">📢 Alert</button>
-            <button class="btnDanger" onclick="event.stopPropagation();toggleStatus('${m.id}','${m.status||'active'}')">
-              ${m.status==='inactive'?'▶':'⏸'}
-            </button>
-          </div>
-        </div>`).join('')}
-    </div>`;
-
-  window.selectMemberProfile=function(id){
-    window._selectedMemberId=id;
-    navigate('memberprofile');
-  };
-  window.toggleStatus=async(id,cur)=>{
-    await db.collection('users').doc(id).update({status:cur==='inactive'?'active':'inactive'});
-    toast('Status update भयो!');renderMemberList();
-  };
-  window.sendAlert=async(id,name)=>{
-    const msg=prompt(`${name} लाई के message पठाउनु छ?`);
-    if(!msg)return;
-    await db.collection('notifications').add({msg:`📢 Admin: ${msg}`,type:'warning',target:id,readBy:[],createdAt:firebase.firestore.FieldValue.serverTimestamp()});
-    toast(`Alert ${name} लाई पठाइयो!`);
-  };
-}
-
-// ====== MEMBER PROFILE (Admin View) ======
-async function renderMemberProfile(){
-  const c=document.getElementById('mainContent');
-  const memberId=window._selectedMemberId;
-  if(!memberId){navigate('memberlist');return;}
-  c.innerHTML=`<div class="pageTitle"><span>👤</span>Member Profile</div><div class="card"><div class="empty">Loading...</div></div>`;
-  try{
-    const [mDoc,txSnap,loanSnap,savSnap,fineSnap]=await Promise.all([
-      db.collection('users').doc(memberId).get(),
-      db.collection('transactions').where('memberId','==',memberId).get().catch(()=>({docs:[]})),
-      db.collection('loans').where('memberId','==',memberId).get().catch(()=>({docs:[]})),
-      db.collection('savings').where('memberId','==',memberId).get().catch(()=>({docs:[]})),
-      db.collection('fines').where('memberId','==',memberId).get().catch(()=>({docs:[]})),
-    ]);
-    const m=mDoc.data()||{};
-    const txs=txSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'')>(a.date||'')?1:-1);
-    const loans=loanSnap.docs.map(d=>({id:d.id,...d.data()}));
-    const savs=savSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'')>(a.date||'')?1:-1);
-    const fines=fineSnap.docs.map(d=>({id:d.id,...d.data()}));
-    const totalPaid=txs.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
-    const loanDue=loans.filter(l=>l.status!=='paid').reduce((a,l)=>a+(l.remaining||0),0);
-    const totalSav=savs.reduce((a,s)=>a+s.amount,0);
-    const pendingFines=fines.filter(f=>f.status==='pending').reduce((a,f)=>a+f.amount,0);
-    c.innerHTML=`
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-        <button class="btnGhost" onclick="navigate('memberlist')" style="padding:8px 14px;font-size:12px">← Back</button>
-        <div class="pageTitle" style="margin:0;border:none;padding:0"><span>👤</span>${m.name||'—'}</div>
-        <button class="btnSm" onclick="editMember('${memberId}')" style="margin-left:auto;padding:8px 14px;font-size:12px">✏️ Edit</button>
-      </div>
-      <!-- Profile Card -->
-      <div class="card" style="padding:20px;margin-bottom:14px">
-        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-          ${(m.photo&&m.photo.length>10)?`<img src="${m.photo}" style="width:70px;height:70px;border-radius:50%;border:3px solid var(--gold);object-fit:cover"/>`:
-            `<div class="avatar" style="width:70px;height:70px;font-size:24px">${(m.name||'U').substring(0,2).toUpperCase()}</div>`}
-          <div>
-            <div style="font-size:20px;font-weight:900;color:var(--gold)">${m.name||'—'} ${m.verified?'✅':''}</div>
-            <div style="font-size:12px;color:var(--text2);margin-top:4px">${m.email||'—'} | ${m.phone||'—'}</div>
-            <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
-              <span class="tag ${m.status==='inactive'?'inactive':'active'}">${m.status||'active'}</span>
-              ${m.memberId?`<span class="tag loan">${m.memberId}</span>`:''}
-            </div>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:16px;border-top:1px solid var(--border);padding-top:14px">
-          <div><div style="font-size:10px;color:var(--text2);font-weight:700;text-transform:uppercase">भर्ना मिति</div><div style="font-size:13px;font-weight:700;color:var(--text);margin-top:2px">${m.joinDateNP||m.joinDate||'—'}</div></div>
-          <div><div style="font-size:10px;color:var(--text2);font-weight:700;text-transform:uppercase">ठेगाना</div><div style="font-size:13px;font-weight:700;color:var(--text);margin-top:2px">${m.address||'—'}</div></div>
-          <div><div style="font-size:10px;color:var(--text2);font-weight:700;text-transform:uppercase">जन्ममिति</div><div style="font-size:13px;font-weight:700;color:var(--text);margin-top:2px">${m.birthday||'—'}</div></div>
-        </div>
-      </div>
-      <!-- Stats -->
-      <div class="statsGrid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
-        <div class="statCard"><div class="sIcon">✅</div><div class="sVal" style="color:#4ade80;font-size:16px">${fmt(totalPaid)}</div><div class="sLabel">Total Paid</div></div>
-        <div class="statCard"><div class="sIcon">🏦</div><div class="sVal" style="color:#f87171;font-size:16px">${fmt(loanDue)}</div><div class="sLabel">Loan Due</div></div>
-        <div class="statCard"><div class="sIcon">🐷</div><div class="sVal" style="color:#34d399;font-size:16px">${fmt(totalSav)}</div><div class="sLabel">Savings</div></div>
-        <div class="statCard"><div class="sIcon">⚠️</div><div class="sVal" style="color:#fbbf24;font-size:16px">${fmt(pendingFines)}</div><div class="sLabel">Fines Due</div></div>
-      </div>
-      <!-- Loans -->
-      ${loans.length>0?`<div class="card" style="margin-bottom:14px">
-        <div class="cardHead">🏦 ऋण विवरण</div>
-        <div class="tableWrap"><table>
-          <thead><tr><th>रकम</th><th>बाँकी</th><th>ब्याज</th><th>स्थिति</th><th>मिति</th></tr></thead>
-          <tbody>${loans.map(l=>`<tr>
-            <td style="font-weight:700">${fmt(l.amount)}</td>
-            <td style="color:#f87171;font-weight:700">${fmt(l.remaining??l.amount)}</td>
-            <td>${l.rate||0}%</td>
-            <td><span class="tag ${l.status==='paid'?'paid':l.status==='partial'?'pending':'loan'}">${l.status||'active'}</span></td>
-            <td>${l.issueDate||'—'}</td>
-          </tr>`).join('')}</tbody>
-        </table></div>
-      </div>`:''}
-      <!-- Savings -->
-      ${savs.length>0?`<div class="card" style="margin-bottom:14px">
-        <div class="cardHead">🐷 बचत विवरण</div>
-        <div class="tableWrap"><table>
-          <thead><tr><th>मिति (बि.सं.)</th><th>रकम</th><th>तरिका</th><th>नोट</th></tr></thead>
-          <tbody>${savs.map(s=>`<tr>
-            <td>${s.dateBS||s.date||'—'}</td>
-            <td style="color:#34d399;font-weight:700">${fmt(s.amount)}</td>
-            <td>${s.method||'Cash'}</td>
-            <td>${s.note||'—'}</td>
-          </tr>`).join('')}</tbody>
-        </table></div>
-      </div>`:''}
-      <!-- Fines -->
-      ${fines.length>0?`<div class="card" style="margin-bottom:14px">
-        <div class="cardHead">⚠️ जरिवाना विवरण</div>
-        <div class="tableWrap"><table>
-          <thead><tr><th>कारण</th><th>रकम</th><th>मिति</th><th>स्थिति</th></tr></thead>
-          <tbody>${fines.map(f=>`<tr>
-            <td>${f.reason||'—'}</td>
-            <td style="color:#fbbf24;font-weight:700">${fmt(f.amount)}</td>
-            <td>${f.dateBS||f.date||'—'}</td>
-            <td><span class="tag ${f.status==='paid'?'paid':'pending'}">${f.status||'pending'}</span></td>
-          </tr>`).join('')}</tbody>
-        </table></div>
-      </div>`:''}
-      <!-- Transactions -->
-      <div class="card">
-        <div class="cardHead">💳 कारोबार इतिहास</div>
-        <div class="tableWrap"><table>
-          <thead><tr><th>मिति (बि.सं.)</th><th>Category</th><th>रकम</th><th>तरिका</th></tr></thead>
-          <tbody>${txs.length===0?`<tr><td colspan="4" class="empty">कुनै कारोबार छैन</td></tr>`:
-            txs.map(t=>`<tr>
-              <td>${t.dateBS||NepaliDate.convert(new Date(t.date||Date.now())).str}</td>
-              <td>${t.category||'—'}</td>
-              <td style="font-weight:800;color:${t.type==='income'?'#4ade80':'#f87171'}">${fmt(t.amount)}</td>
-              <td>${t.method||'Cash'}</td>
-            </tr>`).join('')}
-          </tbody>
-        </table></div>
-      </div>`;
-  }catch(e){c.innerHTML=`<div class="empty">Error: ${e.message}</div>`;}
-}
-
-// ====== EDIT MEMBER (Admin) ======
-async function editMember(memberId){
-  const doc=await db.collection('users').doc(memberId).get();
-  const m=doc.data()||{};
-  const modal=document.createElement('div');
-  modal.className='modalOverlay';
-  modal.innerHTML=`<div class="modalCard" style="max-width:520px">
-    <h2>✏️ सदस्य सम्पादन</h2>
-    <div class="formGrid" style="padding:0">
-      <div class="field"><label>पूरा नाम</label><input type="text" id="emName" value="${m.name||''}"/></div>
-      <div class="field"><label>फोन</label><input type="text" id="emPhone" value="${m.phone||''}"/></div>
-      <div class="field"><label>सदस्य ID</label><input type="text" id="emId" value="${m.memberId||''}"/></div>
-      <div class="field"><label>ठेगाना</label><input type="text" id="emAddress" value="${m.address||''}"/></div>
-      <div class="field"><label>भर्ना मिति (बि.सं.)</label><input type="text" id="emJoinBS" value="${m.joinDateNP||''}"/></div>
-      <div class="field"><label>जन्ममिति</label><input type="date" id="emBirthday" value="${m.birthday||''}"/></div>
-      <div class="field"><label>Verified</label>
-        <select id="emVerified">
-          <option value="true" ${m.verified?'selected':''}>✅ Verified</option>
-          <option value="false" ${!m.verified?'selected':''}>⏳ Pending</option>
-        </select>
-      </div>
-      <div class="field"><label>Status</label>
-        <select id="emStatus">
-          <option value="active" ${m.status==='active'?'selected':''}>✅ Active</option>
-          <option value="inactive" ${m.status==='inactive'?'selected':''}>⏸ Inactive</option>
-        </select>
-      </div>
-      <div class="field" style="grid-column:1/-1"><label>Profile Photo (नयाँ)</label>
-        <input type="file" id="emPhoto" accept="image/*" style="padding:8px"/>
-      </div>
-    </div>
-    <div class="modalActions">
-      <button class="btnGhost" onclick="this.closest('.modalOverlay').remove()">Cancel</button>
-      <button class="btnSm" onclick="saveEditMember('${memberId}')">💾 Save Changes</button>
-    </div>
-  </div>`;
-  document.body.appendChild(modal);
-
-  window.saveEditMember=async(id)=>{
-    const updates={
-      name:document.getElementById('emName').value.trim(),
-      phone:document.getElementById('emPhone').value.trim(),
-      memberId:document.getElementById('emId').value.trim(),
-      address:document.getElementById('emAddress').value.trim(),
-      joinDateNP:document.getElementById('emJoinBS').value.trim(),
-      birthday:document.getElementById('emBirthday').value,
-      verified:document.getElementById('emVerified').value==='true',
-      status:document.getElementById('emStatus').value,
-    };
-    const photoFile=document.getElementById('emPhoto').files[0];
-    if(photoFile){
-      updates.photo=await new Promise(res=>{
-        const img=new Image();const reader=new FileReader();
-        reader.onload=e=>{img.onload=()=>{
-          const canvas=document.createElement('canvas');
-          const max=200;let w=img.width,h=img.height;
-          if(w>h){if(w>max){h=h*max/w;w=max;}}else{if(h>max){w=w*max/h;h=max;}}
-          canvas.width=w;canvas.height=h;
-          canvas.getContext('2d').drawImage(img,0,0,w,h);
-          res(canvas.toDataURL('image/jpeg',0.7));
-        };img.src=e.target.result;};
-        reader.readAsDataURL(photoFile);
-      });
-    }
-    await db.collection('users').doc(id).update(updates);
-    await logActivity('member_edited',`${updates.name} को profile सम्पादन गरियो`,{memberId:id});
-    toast('Profile update भयो!');
-    modal.remove();
-    if(currentPage==='memberprofile') renderMemberProfile();
-    else renderMemberList();
-  };
-}
-window.editMember=editMember;
-
-// ====== PAY REQUEST (Member → Admin Approve) ======
-async function renderPayRequest(){
-  const c=document.getElementById('mainContent');
-  const myReqs=await db.collection('payRequests').where('memberId','==',currentUser.uid).get().catch(()=>({docs:[]}));
-  const reqs=myReqs.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'')>(a.date||'')?1:-1);
-  c.innerHTML=`
-    <div class="pageTitle"><span>💸</span>भुक्तानी अनुरोध</div>
-    <div class="formCard">
-      <div class="cardHead" style="color:var(--gold)">💸 Admin लाई भुक्तानी अनुरोध पठाउनुहोस्</div>
-      <div style="padding:16px">
-        <div class="formGrid" style="padding:0">
-          <div class="field"><label>भुक्तानीको प्रकार</label>
-            <select id="prType">
-              <option value="savings">🐷 बचत</option>
-              <option value="loan">🏦 ऋण तिर्ने</option>
-              <option value="fine">⚠️ जरिवाना तिर्ने</option>
-              <option value="fee">💰 शुल्क</option>
-            </select>
-          </div>
-          <div class="field"><label>रकम (रु.)</label><input type="number" id="prAmt" placeholder="५०००"/></div>
-          <div class="field"><label>भुक्तानी तरिका</label>
-            <select id="prMethod">
-              <option>Cash</option><option>eSewa</option><option>Khalti</option>
-              <option>Bank Transfer</option><option>IME Pay</option>
-            </select>
-          </div>
-          <div class="field"><label>मिति</label><input type="date" id="prDate" value="${todayStr()}"/></div>
-          <div class="field" style="grid-column:1/-1"><label>नोट / प्रमाण</label>
-            <textarea id="prNote" rows="2" placeholder="भुक्तानीको विवरण..."></textarea>
-          </div>
-        </div>
-        <div style="margin-top:14px">
-          <button class="btnSm" onclick="submitPayReq()">📤 अनुरोध पठाउनुहोस्</button>
-        </div>
-      </div>
-    </div>
-    ${reqs.length>0?`<div class="card">
-      <div class="cardHead">मेरो अनुरोधहरू</div>
-      <div class="tableWrap"><table>
-        <thead><tr><th>प्रकार</th><th>रकम</th><th>तरिका</th><th>मिति</th><th>स्थिति</th></tr></thead>
-        <tbody>${reqs.map(r=>`<tr>
-          <td>${r.type||'—'}</td>
-          <td style="font-weight:700;color:var(--gold)">${fmt(r.amount)}</td>
-          <td>${r.method||'—'}</td>
-          <td>${r.dateBS||r.date||'—'}</td>
-          <td><span class="tag ${r.status==='approved'?'approved':r.status==='rejected'?'rejected':'pending'}">${r.status||'pending'}</span></td>
-        </tr>`).join('')}</tbody>
-      </table></div>
-    </div>`:''}`;
-
-  window.submitPayReq=async()=>{
-    const type=document.getElementById('prType').value;
-    const amt=Number(document.getElementById('prAmt').value);
-    const method=document.getElementById('prMethod').value;
-    const date=document.getElementById('prDate').value;
-    const note=document.getElementById('prNote').value;
-    if(!amt||amt<=0){toast('रकम हाल्नुहोस्!','error');return;}
-    const bsDate=NepaliDate.convert(new Date(date)).str;
-    await db.collection('payRequests').add({
-      memberId:currentUser.uid,memberName:currentUserData?.name||'',
-      type,amount:amt,method,date,dateBS:bsDate,note,
-      status:'pending',createdAt:firebase.firestore.FieldValue.serverTimestamp()
-    });
-    await addNotif(`💸 ${currentUserData?.name} ले ${fmt(amt)} ${type} request गरे!`,'info','admin');
-    toast('अनुरोध पठाइयो!');
-    renderPayRequest();
-  };
-}
-
-// ====== PAY REQUESTS ADMIN ======
-async function renderPayRequests(){
-  const c=document.getElementById('mainContent');
-  async function load(){
-    const snap=await db.collection('payRequests').get().catch(()=>({docs:[]}));
-    const reqs=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'')>(a.date||'')?1:-1);
-    const pending=reqs.filter(r=>r.status==='pending').length;
-    c.innerHTML=`
-      <div class="pageTitle"><span>💸</span>भुक्तानी अनुरोधहरू ${pending>0?`<span class="navBadge" style="display:inline-block">${pending}</span>`:''}</div>
-      <div class="card"><div class="tableWrap"><table>
-        <thead><tr><th>सदस्य</th><th>प्रकार</th><th>रकम</th><th>तरिका</th><th>मिति</th><th>नोट</th><th>स्थिति</th><th>Action</th></tr></thead>
-        <tbody>${reqs.length===0?`<tr><td colspan="8" class="empty">कुनै अनुरोध छैन</td></tr>`:
-          reqs.map(r=>`<tr>
-            <td style="font-weight:700">${r.memberName||'—'}</td>
-            <td><span class="tag loan">${r.type||'—'}</span></td>
-            <td style="font-weight:700;color:var(--gold)">${fmt(r.amount)}</td>
-            <td>${r.method||'—'}</td>
-            <td>${r.dateBS||r.date||'—'}</td>
-            <td>${r.note||'—'}</td>
-            <td><span class="tag ${r.status==='approved'?'approved':r.status==='rejected'?'rejected':'pending'}">${r.status||'pending'}</span></td>
-            <td style="display:flex;gap:6px">
-              ${r.status==='pending'?`
-                <button class="btnSm" style="font-size:11px;padding:5px 10px" onclick="approvePayReq('${r.id}','${r.memberId}','${r.memberName||''}','${r.type}',${r.amount},'${r.method}','${r.date}','${r.dateBS||''}')">✅ Approve</button>
-                <button class="btnDanger" style="padding:5px 8px" onclick="rejectPayReq('${r.id}','${r.memberId}','${r.memberName||''}')">❌</button>
-              `:'—'}
-            </td>
-          </tr>`).join('')}
-        </tbody>
-      </table></div></div>`;
-  }
-  load();
-
-  window.approvePayReq=async(id,memberId,memberName,type,amount,method,date,dateBS)=>{
-    await db.collection('payRequests').doc(id).update({status:'approved',approvedAt:firebase.firestore.FieldValue.serverTimestamp()});
-    const bsDate=dateBS||NepaliDate.convert(new Date(date||Date.now())).str;
-    // Auto-record based on type
-    if(type==='savings'){
-      await db.collection('savings').add({memberId,memberName,amount,method,date,dateBS:bsDate,note:'Payment request approved',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
-    } else if(type==='loan'){
-      // Find active loan and repay
-      const loanSnap=await db.collection('loans').where('memberId','==',memberId).where('status','!=','paid').get().catch(()=>({docs:[]}));
-      if(loanSnap.docs.length>0){
-        const loan=loanSnap.docs[0];
-        const newRem=Math.max(0,(loan.data().remaining||0)-amount);
-        await loan.ref.update({remaining:newRem,status:newRem===0?'paid':'partial'});
-      }
-    }
-    await db.collection('transactions').add({
-      type:'income',category:type==='savings'?'Savings':type==='loan'?'Loan Repayment':'Fee Payment',
-      amount,date,dateBS:bsDate,memberId,memberName,method,
-      note:'Payment request approved by admin',
-      by:currentUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()
-    });
-    await addNotif(`✅ तपाईको ${fmt(amount)} ${type} request approve भयो!`,'success',memberId);
-    toast(`${memberName} को request approve भयो!`);load();
-  };
-
-  window.rejectPayReq=async(id,memberId,memberName)=>{
-    const reason=prompt('Rejection कारण:')||'';
-    await db.collection('payRequests').doc(id).update({status:'rejected',rejectionReason:reason});
-    await addNotif(`❌ तपाईको payment request reject भयो।${reason?' कारण: '+reason:''}`,'error',memberId);
-    toast(`${memberName} को request reject भयो!`,'error');load();
-  };
-}
-
-// ====== PHASE 2: QR CODE ======
-async function showMemberQR(memberId,memberName){
-  // Get member data
-  const doc=await db.collection('users').doc(memberId).get();
-  const m=doc.data()||{};
-  const modal=document.createElement('div');
-  modal.className='modalOverlay';
-  // QR data = member info as text
-  const qrText=`दाजुभाइ समूह\nनाम: ${m.name||memberName}\nID: ${m.memberId||'—'}\nफोन: ${m.phone||'—'}\nEmail: ${m.email||'—'}`;
-  const qrUrl=`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrText)}&bgcolor=ffffff&color=000000&margin=10`;
-  modal.innerHTML=`<div class="modalCard" style="text-align:center;max-width:340px">
-    <h2>🔐 ${m.name||memberName}</h2>
-    <div style="background:#fff;border-radius:16px;padding:16px;margin:16px auto;width:fit-content;box-shadow:0 4px 20px rgba(0,0,0,0.3)">
-      <img src="${qrUrl}" style="width:200px;height:200px;display:block" 
-        onerror="this.parentElement.innerHTML='<div style=\'padding:20px;color:#888;font-size:12px\'>QR load bhayena<br/>Internet check garnus</div>'"/>
-    </div>
-    <div style="background:var(--card2);border-radius:10px;padding:12px;margin:12px 0;text-align:left;font-size:12px;border:1px solid var(--border)">
-      <div><b style="color:var(--gold)">नाम:</b> ${m.name||'—'}</div>
-      <div><b style="color:var(--gold)">सदस्य ID:</b> ${m.memberId||'—'}</div>
-      <div><b style="color:var(--gold)">फोन:</b> ${m.phone||'—'}</div>
-      <div><b style="color:var(--gold)">Email:</b> ${m.email||'—'}</div>
-    </div>
-    <p style="font-size:11px;color:var(--text2)">यो QR scan गरेर member को जानकारी हेर्न सकिन्छ</p>
-    <div class="modalActions">
-      <button class="btnGhost" onclick="this.closest('.modalOverlay').remove()">Close</button>
-      <button class="btnSm" onclick="shareViaWhatsApp('दाजुभाइ समूह Member Card\nनाम: ${m.name||memberName}\nID: ${m.memberId||'—'}\nफोन: ${m.phone||'—'}')">📱 WhatsApp</button>
-    </div>
-  </div>`;
-  document.body.appendChild(modal);
-}
-window.showMemberQR=showMemberQR;
-
-// ====== PHASE 2: WHATSAPP SHARE ======
-function shareViaWhatsApp(text){
-  const url=`https://wa.me/?text=${encodeURIComponent(text)}`;
-  window.open(url,'_blank');
-}
-window.shareViaWhatsApp=shareViaWhatsApp;
-
-// ====== PHASE 2: BIRTHDAY CHECK ======
-async function checkBirthdays(){
-  if(currentUserData?.role!=='admin')return;
-  const today=new Date();
-  const mm=String(today.getMonth()+1).padStart(2,'0');
-  const dd=String(today.getDate()).padStart(2,'0');
-  const todayMMDD=mm+'-'+dd;
-  try{
-    const snap=await db.collection('users').where('role','==','member').get();
-    snap.docs.forEach(d=>{
-      const m=d.data();
-      if(m.birthday&&m.birthday.substring(5)===todayMMDD){
-        toast(`🎂 आज ${m.name} को जन्मदिन हो!`,'info');
-        addNotif(`🎂 आज ${m.name} को जन्मदिन हो! Happy Birthday! 🎉`,'success','all');
-      }
-    });
-  }catch(e){}
-}
-
-// ====== PHASE 2: NEPAL BANK RATES ======
-async function renderBankRates(){
-  const c=document.getElementById('mainContent');
-  c.innerHTML=`
-    <div class="pageTitle"><span>🏦</span>नेपाल बैंक दर</div>
-    <div class="card" style="padding:20px">
-      <div style="font-size:13px;color:var(--text2);margin-bottom:16px">नेपालका प्रमुख बैंकहरूको ब्याज दर (अनुमानित)</div>
-      <div class="tableWrap"><table>
-        <thead><tr><th>बैंक</th><th>बचत ब्याज</th><th>FD ब्याज</th><th>ऋण ब्याज</th></tr></thead>
-        <tbody>
-          <tr><td style="font-weight:700">नेपाल बैंक</td><td style="color:#34d399">5.5%</td><td style="color:#34d399">9-11%</td><td style="color:#f87171">11-14%</td></tr>
-          <tr><td style="font-weight:700">NIC Asia Bank</td><td style="color:#34d399">6%</td><td style="color:#34d399">9-12%</td><td style="color:#f87171">12-15%</td></tr>
-          <tr><td style="font-weight:700">Nabil Bank</td><td style="color:#34d399">5.5%</td><td style="color:#34d399">9-11%</td><td style="color:#f87171">11-13%</td></tr>
-          <tr><td style="font-weight:700">Everest Bank</td><td style="color:#34d399">6%</td><td style="color:#34d399">9-12%</td><td style="color:#f87171">12-14%</td></tr>
-          <tr><td style="font-weight:700">Rastriya Banijya</td><td style="color:#34d399">5%</td><td style="color:#34d399">8-10%</td><td style="color:#f87171">10-12%</td></tr>
-          <tr><td style="font-weight:700">Global IME</td><td style="color:#34d399">6%</td><td style="color:#34d399">9-12%</td><td style="color:#f87171">11-14%</td></tr>
-        </tbody>
-      </table></div>
-      <div style="margin-top:14px;padding:12px;background:rgba(245,158,11,0.08);border-radius:10px;font-size:11px;color:var(--text2)">
-        ⚠️ यो जानकारी अनुमानित हो। वास्तविक दरको लागि सम्बन्धित बैंकमा सम्पर्क गर्नुहोस्।
-      </div>
-    </div>`;
-}
-
-// ====== PHASE 2: SPLIT EXPENSE ======
-async function renderSplitExpense(){
-  const c=document.getElementById('mainContent');
-  const mSnap=await db.collection('users').where('role','==','member').get();
-  const members=mSnap.docs.map(d=>({id:d.id,...d.data()}));
-  c.innerHTML=`
-    <div class="pageTitle"><span>💸</span>खर्च विभाजन</div>
-    <div class="formCard">
-      <div class="cardHead">Event खर्च सदस्यहरूमा बाँड्नुहोस्</div>
-      <div class="formGrid">
-        <div class="field"><label>Event नाम</label><input type="text" id="spEvent" placeholder="वार्षिक भोज"/></div>
-        <div class="field"><label>कुल खर्च (रु.)</label><input type="number" id="spAmt" placeholder="10000" oninput="calcSplit()"/></div>
-        <div class="field"><label>मिति</label><input type="date" id="spDate" value="${todayStr()}"/></div>
-      </div>
-      <div style="padding:0 16px 16px">
-        <label style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase">सदस्य छान्नुहोस्</label>
-        <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px">
-          ${members.map(m=>`<label style="display:flex;align-items:center;gap:6px;background:var(--card2);border:1px solid var(--border);padding:6px 12px;border-radius:8px;cursor:pointer">
-            <input type="checkbox" value="${m.id}" data-name="${m.name}" onchange="calcSplit()" style="width:16px;height:16px"/> ${m.name}
-          </label>`).join('')}
-        </div>
-        <div id="splitResult" style="margin-top:12px;padding:12px;background:var(--card2);border-radius:10px;font-size:13px;color:var(--text2)">
-          सदस्य र रकम छान्नुहोस्...
-        </div>
-        <button class="btnSm" style="margin-top:12px" onclick="saveSplitExpense()">💾 Save र Fine Add गर्नुहोस्</button>
-      </div>
-    </div>`;
-
-  window.calcSplit=()=>{
-    const amt=Number(document.getElementById('spAmt').value||0);
-    const checked=document.querySelectorAll('#spEvent ~ * input[type=checkbox]:checked, .formCard input[type=checkbox]:checked');
-    const count=checked.length;
-    const el=document.getElementById('splitResult');
-    if(!amt||count===0){if(el)el.textContent='सदस्य र रकम छान्नुहोस्...';return;}
-    const perPerson=Math.round(amt/count);
-    if(el)el.innerHTML=`<b style="color:var(--gold)">प्रति सदस्य: ${fmt(perPerson)}</b> (${count} जना)`;
-  };
-
-  window.saveSplitExpense=async()=>{
-    const event=document.getElementById('spEvent').value.trim();
-    const amt=Number(document.getElementById('spAmt').value||0);
-    const date=document.getElementById('spDate').value;
-    const checked=[...document.querySelectorAll('.formCard input[type=checkbox]:checked')];
-    if(!event||!amt||checked.length===0){toast('Event, रकम र सदस्य चाहिन्छ!','error');return;}
-    const perPerson=Math.round(amt/checked.length);
-    const bsDate=NepaliDate.convert(new Date(date)).str;
-    // Add expense transaction
-    await db.collection('transactions').add({type:'expense',category:'Event Cost',amount:amt,date,dateBS:bsDate,memberName:'Split',note:event,by:currentUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
-    // Add fine for each member
-    const batch=db.batch();
-    checked.forEach(cb=>{
-      const ref=db.collection('fines').doc();
-      batch.set(ref,{memberId:cb.value,memberName:cb.dataset.name,amount:perPerson,category:'fine',reason:`${event} - Split Expense`,date,dateBS:bsDate,note:'Auto split',status:'pending',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
-    });
-    await batch.commit();
-    await addNotif(`💸 ${event} खर्च विभाजन: प्रति सदस्य ${fmt(perPerson)}`,'info','all');
-    toast('Split expense save भयो!');
-    renderSplitExpense();
-  };
-}
-
-// ====== PHASE 2: ANNUAL REPORT ======
-async function renderAnnualReport(){
-  const c=document.getElementById('mainContent');
-  const [txSnap,savSnap,loanSnap,fineSnap,mSnap]=await Promise.all([
-    db.collection('transactions').get(),
-    db.collection('savings').get(),
-    db.collection('loans').get(),
-    db.collection('fines').get(),
-    db.collection('users').where('role','==','member').get(),
-  ]);
-  const txs=txSnap.docs.map(d=>d.data());
-  const savs=savSnap.docs.map(d=>d.data());
-  const loans=loanSnap.docs.map(d=>d.data());
-  const fines=fineSnap.docs.map(d=>d.data());
-  const members=mSnap.docs.map(d=>({id:d.id,...d.data()}));
-  const totalInc=txs.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
-  const totalExp=txs.filter(t=>t.type==='expense').reduce((a,t)=>a+t.amount,0);
-  const totalSav=savs.reduce((a,s)=>a+s.amount,0);
-  const totalLoanDue=loans.filter(l=>l.status!=='paid').reduce((a,l)=>a+(l.remaining||0),0);
-  const totalFines=fines.filter(f=>f.status==='pending').reduce((a,f)=>a+f.amount,0);
-  c.innerHTML=`
-    <div class="pageTitle"><span>📊</span>वार्षिक वित्तीय प्रतिवेदन</div>
-    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-      <button class="btnSm" onclick="exportAnnualPDF()">📄 PDF Download</button>
-      <button class="btnSm btnGreen" onclick="exportAllDataExcel()">📊 Excel Backup</button>
-      <button class="btnGhost" onclick="shareViaWhatsApp('दाजुभाइ समूह Annual Report: Balance ${fmt(totalInc-totalExp)}, Savings ${fmt(totalSav)}')">📱 WhatsApp</button>
-    </div>
-    <div class="statsGrid">
-      <div class="statCard"><div class="sIcon">💰</div><div class="sVal" style="color:#4ade80">${fmt(totalInc)}</div><div class="sLabel">कुल आम्दानी</div></div>
-      <div class="statCard"><div class="sIcon">📤</div><div class="sVal" style="color:#f87171">${fmt(totalExp)}</div><div class="sLabel">कुल खर्च</div></div>
-      <div class="statCard"><div class="sIcon">🏦</div><div class="sVal" style="color:var(--gold)">${fmt(totalInc-totalExp)}</div><div class="sLabel">मौज्दात</div></div>
-      <div class="statCard"><div class="sIcon">🐷</div><div class="sVal" style="color:#34d399">${fmt(totalSav)}</div><div class="sLabel">कुल बचत</div></div>
-      <div class="statCard"><div class="sIcon">🏦</div><div class="sVal" style="color:#f87171">${fmt(totalLoanDue)}</div><div class="sLabel">ऋण बाँकी</div></div>
-      <div class="statCard"><div class="sIcon">⚠️</div><div class="sVal" style="color:#fbbf24">${fmt(totalFines)}</div><div class="sLabel">जरिवाना बाँकी</div></div>
-    </div>
-    <div class="card">
-      <div class="cardHead">सदस्यवार सारांश</div>
-      <div class="tableWrap"><table>
-        <thead><tr><th>सदस्य</th><th>कुल बचत</th><th>ऋण बाँकी</th><th>जरिवाना बाँकी</th></tr></thead>
-        <tbody>${members.map(m=>{
-          const mSav=savs.filter(s=>s.memberId===m.id).reduce((a,s)=>a+s.amount,0);
-          const mLoan=loans.filter(l=>l.memberId===m.id&&l.status!=='paid').reduce((a,l)=>a+(l.remaining||0),0);
-          const mFine=fines.filter(f=>f.memberId===m.id&&f.status==='pending').reduce((a,f)=>a+f.amount,0);
-          return`<tr>
-            <td style="font-weight:700">${m.name||'—'}</td>
-            <td style="color:#34d399;font-weight:700">${fmt(mSav)}</td>
-            <td style="color:${mLoan>0?'#f87171':'#4ade80'};font-weight:700">${fmt(mLoan)}</td>
-            <td style="color:${mFine>0?'#fbbf24':'#4ade80'};font-weight:700">${fmt(mFine)}</td>
-          </tr>`;}).join('')}
-        </tbody>
-      </table></div>
-    </div>`;
-
-  window.exportAnnualPDF=()=>{
-    const printWin=window.open('','_blank');
-    printWin.document.write(`<!DOCTYPE html><html><head>
-      <title>Annual Report - Daju-Bhai Samuha</title>
-      <style>body{font-family:Arial,sans-serif;padding:30px;max-width:700px;margin:0 auto}
-      h1{text-align:center;color:#333}h2{color:#555;border-bottom:1px solid #ddd;padding-bottom:6px}
-      table{width:100%;border-collapse:collapse;margin:12px 0}
-      td,th{padding:8px;border:1px solid #ddd;text-align:left}th{background:#f5f5f5;font-weight:bold}
-      .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0}
-      .box{padding:12px;border:1px solid #ddd;border-radius:8px;text-align:center}
-      .box .val{font-size:18px;font-weight:bold;color:#333}.box .lbl{font-size:11px;color:#888}
-      @media print{button{display:none}}</style>
-    </head><body>
-      <h1>🏦 दाजुभाइ समूह</h1>
-      <h2>वार्षिक वित्तीय प्रतिवेदन</h2>
-      <button onclick="window.print()" style="padding:8px 16px;background:#16a34a;color:#fff;border:none;border-radius:6px;cursor:pointer;margin-bottom:16px">🖨️ Print</button>
-      <div class="summary">
-        <div class="box"><div class="val">${fmt(totalInc)}</div><div class="lbl">कुल आम्दानी</div></div>
-        <div class="box"><div class="val">${fmt(totalExp)}</div><div class="lbl">कुल खर्च</div></div>
-        <div class="box"><div class="val">${fmt(totalInc-totalExp)}</div><div class="lbl">मौज्दात</div></div>
-        <div class="box"><div class="val">${fmt(totalSav)}</div><div class="lbl">कुल बचत</div></div>
-        <div class="box"><div class="val">${fmt(totalLoanDue)}</div><div class="lbl">ऋण बाँकी</div></div>
-        <div class="box"><div class="val">${fmt(totalFines)}</div><div class="lbl">जरिवाना बाँकी</div></div>
-      </div>
-      <h2>सदस्यवार सारांश</h2>
-      <table><tr><th>सदस्य</th><th>बचत</th><th>ऋण बाँकी</th><th>जरिवाना</th></tr>
-        ${members.map(m=>{
-          const mSav=savs.filter(s=>s.memberId===m.id).reduce((a,s)=>a+s.amount,0);
-          const mLoan=loans.filter(l=>l.memberId===m.id&&l.status!=='paid').reduce((a,l)=>a+(l.remaining||0),0);
-          const mFine=fines.filter(f=>f.memberId===m.id&&f.status==='pending').reduce((a,f)=>a+f.amount,0);
-          return`<tr><td>${m.name||'—'}</td><td>${fmt(mSav)}</td><td>${fmt(mLoan)}</td><td>${fmt(mFine)}</td></tr>`;
-        }).join('')}
-      </table>
-      <p style="text-align:center;color:#888;font-size:11px;margin-top:30px">Generated: ${NepaliDate.convert(new Date()).str} | Daju-Bhai Samuha - ESTD 2025</p>
-    </body></html>`);
-    printWin.document.close();
-    toast('PDF window opened!');
-  };
-}
-
-// ====== PHASE 2: Add to admin links ======
 
 // ====== PIN SETTINGS ======
 function renderPinSettings(){
@@ -3341,6 +2664,716 @@ async function renderProfile(){
     catch(e){if(e.code==='auth/requires-recent-login')toast('Security ko lagi feri login garnus!','error');else toast('Error: '+e.message,'error');}
   };
 }
+
+
+// ============================
+// MEMBERS HUB
+// ============================
+async function renderMembersHub(){
+  const c=document.getElementById('mainContent');
+  window._mTab=window._mTab||'list';
+  c.innerHTML=`<div class="pageTitle"><span>👥</span>सदस्यहरू</div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+      <button class="pill${window._mTab==='list'?' active':''}" onclick="window._mTab='list';renderMembersHub()">📋 सूची</button>
+      <button class="pill${window._mTab==='add'?' active':''}" onclick="window._mTab='add';renderMembersHub()">➕ थप्नुहोस्</button>
+      <button class="pill${window._mTab==='pay'?' active':''}" onclick="window._mTab='pay';renderMembersHub()">💸 भुक्तानी अनुरोध</button>
+    </div>
+    <div id="mTabContent">Loading...</div>`;
+  
+  const tc=document.getElementById('mTabContent');
+  if(window._mTab==='list'){
+    const snap=await db.collection('users').where('role','==','member').get();
+    const members=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+    tc.innerHTML=`<div class="memberGrid">${members.length===0?'<div class="empty">कुनै सदस्य छैन</div>':
+      members.map(m=>`<div class="memberCard">
+        <div class="mhead">
+          ${m.photo&&m.photo.length>10?`<img class="mavatar" src="${m.photo}" onerror="this.outerHTML='<div class=\'avatar\'style=\'width:52px;height:52px;font-size:18px\'>${(m.name||'U').substring(0,2).toUpperCase()}</div>'"/>`:
+            `<div class="avatar" style="width:52px;height:52px;font-size:18px">${(m.name||'U').substring(0,2).toUpperCase()}</div>`}
+          <div style="flex:1;min-width:0">
+            <div class="mname">${m.name||'—'} ${m.verified?'<span style="color:#4ade80">✅</span>':''}</div>
+            <div class="mmid">${m.memberId||'—'}</div>
+            <span class="tag ${m.status==='inactive'?'inactive':'active'}">${m.status||'active'}</span>
+          </div>
+        </div>
+        <div class="mdetails">📞 ${m.phone||'—'}<br/>📅 ${m.joinDateNP||m.joinDate||'—'}</div>
+        <div class="mactions" style="flex-wrap:wrap;gap:6px">
+          <button class="pill" onclick="openMP('${m.id}')">👤 Profile</button>
+          <button class="pill" onclick="editMemberModal('${m.id}')">✏️ Edit</button>
+          <button class="pill" onclick="qrQuickEntry('${m.id}','${(m.name||'').replace(/'/g,'')}')">📷 Quick</button>
+          <button class="pill" onclick="showQR('${m.id}','${(m.name||'').replace(/'/g,'')}','${m.memberId||''}','${m.phone||''}')">🔐 QR</button>
+          <button class="btnDanger" onclick="toggleMS('${m.id}','${m.status||'active'}')" style="padding:6px 10px">${m.status==='inactive'?'▶':'⏸'}</button>
+        </div>
+      </div>`).join('')}
+    </div>`;
+    window.openMP=id=>{window._selMember=id;renderMemberProfile();};
+    window.toggleMS=async(id,cur)=>{
+      await db.collection('users').doc(id).update({status:cur==='inactive'?'active':'inactive'});
+      toast('Status update भयो!');renderMembersHub();
+    };
+    
+  } else if(window._mTab==='add'){
+    tc.innerHTML=`<div class="formCard">
+      <div class="cardHead">नयाँ सदस्य</div>
+      <div class="formGrid">
+        <div class="field"><label>पूरा नाम *</label><input type="text" id="mn" placeholder="नाम"/></div>
+        <div class="field"><label>Email *</label><input type="email" id="me" placeholder="email@example.com"/></div>
+        <div class="field"><label>Password *</label><input type="password" id="mp" placeholder="Min 6"/></div>
+        <div class="field"><label>फोन</label><input type="text" id="mph" placeholder="९८०..."/></div>
+        <div class="field"><label>सदस्य ID</label><input type="text" id="mid" placeholder="CLB-001"/></div>
+        <div class="field"><label>भर्ना मिति (बि.सं.)</label><input type="text" id="mjbs" placeholder="२०८१-०५-१५"/></div>
+        <div class="field"><label>भर्ना मिति (AD)</label><input type="date" id="mj" value="${todayStr()}"/></div>
+        <div class="field"><label>जन्ममिति</label><input type="date" id="mb"/></div>
+        <div class="field"><label>ठेगाना</label><input type="text" id="mad" placeholder="भक्तपुर"/></div>
+        <div class="field"><label>Photo</label><input type="file" id="mphoto" accept="image/*" style="padding:8px"/></div>
+        <div class="field"><label>Verified</label><select id="mv"><option value="true">✅ Verified</option><option value="false">⏳ Pending</option></select></div>
+      </div>
+      <div class="formActions"><button class="btnSm" onclick="doAddMember()">✅ थप्नुहोस्</button></div>
+    </div>`;
+    
+    window.doAddMember=async()=>{
+      const name=document.getElementById('mn').value.trim();
+      const email=document.getElementById('me').value.trim();
+      const pass=document.getElementById('mp').value;
+      if(!name||!email||!pass){toast('नाम, email र password चाहिन्छ!','error');return;}
+      if(pass.length<6){toast('Password 6+ अक्षर!','error');return;}
+      const pf=document.getElementById('mphoto').files[0];
+      let photo='';
+      if(pf){photo=await compressImg(pf,200);}
+      const joinBS=document.getElementById('mjbs').value.trim();
+      const joinDate=document.getElementById('mj').value;
+      const joinDateNP=joinBS||(joinDate?NepaliDate.convert(new Date(joinDate)).str:'');
+      try{
+        const sa=firebase.initializeApp(firebase.apps[0].options,'sec_'+Date.now());
+        const sauth=sa.auth();
+        const cred=await sauth.createUserWithEmailAndPassword(email,pass);
+        const uid=cred.user.uid;
+        await sauth.signOut();await sa.delete();
+        await db.collection('users').doc(uid).set({
+          name,email,phone:document.getElementById('mph').value.trim(),
+          memberId:document.getElementById('mid').value.trim(),
+          joinDate,joinDateNP,address:document.getElementById('mad').value.trim(),
+          birthday:document.getElementById('mb').value,
+          role:'member',status:'active',
+          verified:document.getElementById('mv').value==='true',
+          photo,createdAt:firebase.firestore.FieldValue.serverTimestamp()
+        });
+        await addNotif(`🎉 नमस्कार ${name}! दाजुभाइ समूहमा स्वागत छ!`,'success',uid);
+        toast(`${name} थपियो!`);window._mTab='list';renderMembersHub();
+      }catch(e){
+        toast(e.code==='auth/email-already-in-use'?'Email already use भयो!':e.message,'error');
+      }
+    };
+    
+  } else {
+    // Pay requests
+    const snap=await db.collection('payRequests').get().catch(()=>({docs:[]}));
+    const reqs=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'')>(a.date||'')?1:-1);
+    const pend=reqs.filter(r=>r.status==='pending').length;
+    tc.innerHTML=`${pend>0?`<div class="dueAlert" style="color:var(--gold)">💸 ${pend} अनुरोध pending</div>`:''}
+    <div class="card"><div class="tableWrap"><table>
+      <thead><tr><th>सदस्य</th><th>प्रकार</th><th>रकम</th><th>तरिका</th><th>मिति</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody>${reqs.length===0?`<tr><td colspan="7" class="empty">कुनै अनुरोध छैन</td></tr>`:
+        reqs.map(r=>`<tr>
+          <td>${r.memberName||'—'}</td><td><span class="tag loan">${r.type||'—'}</span></td>
+          <td style="font-weight:700;color:var(--gold)">${fmt(r.amount)}</td>
+          <td>${r.method||'—'}</td><td>${r.dateBS||r.date||'—'}</td>
+          <td><span class="tag ${r.status==='approved'?'approved':r.status==='rejected'?'rejected':'pending'}">${r.status||'pending'}</span></td>
+          <td style="display:flex;gap:4px">${r.status==='pending'?`
+            <button class="btnSm" style="font-size:10px;padding:4px 8px" onclick="appPayReq('${r.id}','${r.memberId}','${r.memberName||''}','${r.type}',${r.amount},'${r.method}','${r.date}','${r.dateBS||''}')">✅</button>
+            <button class="btnDanger" style="padding:4px 6px" onclick="rejPayReq('${r.id}','${r.memberId}','${r.memberName||''}')">❌</button>
+          `:'—'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div></div>`;
+    
+    window.appPayReq=async(id,mId,mName,type,amt,method,date,bsDate)=>{
+      await db.collection('payRequests').doc(id).update({status:'approved',approvedAt:firebase.firestore.FieldValue.serverTimestamp()});
+      const bsd=bsDate||NepaliDate.convert(new Date(date||Date.now())).str;
+      if(type==='savings') await db.collection('savings').add({memberId:mId,memberName:mName,amount:amt,method,date:date||todayStr(),dateBS:bsd,note:'Request approved',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+      await db.collection('transactions').add({type:'income',category:type==='savings'?'Savings':'Loan Repayment',amount:amt,date:date||todayStr(),dateBS:bsd,memberId:mId,memberName:mName,method,note:'Payment request approved',by:currentUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+      await addNotif(`✅ तपाईको ${fmt(amt)} ${type} request approve भयो!`,'success',mId);
+      toast(`${mName} को request approve भयो!`);renderMembersHub();
+    };
+    window.rejPayReq=async(id,mId,mName)=>{
+      const r=prompt('Reason:')||'';
+      await db.collection('payRequests').doc(id).update({status:'rejected',reason:r});
+      await addNotif(`❌ तपाईको payment request reject भयो।`,'error',mId);
+      toast(`${mName} reject भयो!`,'error');renderMembersHub();
+    };
+  }
+}
+
+// ============================
+// COMPRESS IMAGE HELPER
+// ============================
+function compressImg(file,maxSize){
+  return new Promise(res=>{
+    const img=new Image();const reader=new FileReader();
+    reader.onload=e=>{img.onload=()=>{
+      const canvas=document.createElement('canvas');
+      let w=img.width,h=img.height;
+      if(w>h){if(w>maxSize){h=h*maxSize/w;w=maxSize;}}
+      else{if(h>maxSize){w=w*maxSize/h;h=maxSize;}}
+      canvas.width=w;canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      res(canvas.toDataURL('image/jpeg',0.7));
+    };img.src=e.target.result;};
+    reader.readAsDataURL(file);
+  });
+}
+
+// ============================
+// MEMBER PROFILE (Admin)
+// ============================
+async function renderMemberProfile(){
+  const c=document.getElementById('mainContent');
+  const mId=window._selMember;
+  if(!mId){navigate('members');return;}
+  c.innerHTML=`<div style="text-align:center;padding:40px"><div class="spin" style="margin:0 auto"></div></div>`;
+  try{
+    const [mDoc,txSnap,lSnap,sSnap,fSnap]=await Promise.all([
+      db.collection('users').doc(mId).get(),
+      db.collection('transactions').where('memberId','==',mId).get().catch(()=>({docs:[]})),
+      db.collection('loans').where('memberId','==',mId).get().catch(()=>({docs:[]})),
+      db.collection('savings').where('memberId','==',mId).get().catch(()=>({docs:[]})),
+      db.collection('fines').where('memberId','==',mId).get().catch(()=>({docs:[]})),
+    ]);
+    const m=mDoc.data()||{};
+    const txs=txSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'0')>(a.date||'0')?1:-1);
+    const loans=lSnap.docs.map(d=>({id:d.id,...d.data()}));
+    const savs=sSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'0')>(a.date||'0')?1:-1);
+    const fines=fSnap.docs.map(d=>({id:d.id,...d.data()}));
+    const paid=txs.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
+    const lDue=loans.filter(l=>l.status!=='paid').reduce((a,l)=>a+(l.remaining||0),0);
+    const tSav=savs.reduce((a,s)=>a+s.amount,0);
+    const pFines=fines.filter(f=>f.status==='pending').reduce((a,f)=>a+f.amount,0);
+    // Credit score calculation
+    const onTime=txs.filter(t=>t.type==='income').length;
+    const lateCount=fines.filter(f=>f.reason&&f.reason.includes('Late')).length;
+    const score=Math.min(100,Math.max(0,50+onTime*5-lateCount*10));
+    const scoreColor=score>=70?'#4ade80':score>=40?'#fbbf24':'#f87171';
+    
+    c.innerHTML=`
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+        <button class="btnGhost" onclick="navigate('members')" style="padding:8px 12px;font-size:12px">← Back</button>
+        <div class="pageTitle" style="margin:0;border:none;padding:0"><span>👤</span>${m.name||'—'}</div>
+        <button class="btnSm" onclick="editMemberModal('${mId}')" style="margin-left:auto;font-size:12px;padding:8px 14px">✏️ Edit</button>
+        <button class="pill" onclick="qrQuickEntry('${mId}','${(m.name||'').replace(/'/g,'')}')">📷 Quick Entry</button>
+      </div>
+      <div class="card" style="padding:20px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+          ${m.photo&&m.photo.length>10?`<img src="${m.photo}" style="width:70px;height:70px;border-radius:50%;border:3px solid var(--gold);object-fit:cover"/>`:
+            `<div class="avatar" style="width:70px;height:70px;font-size:24px">${(m.name||'U').substring(0,2).toUpperCase()}</div>`}
+          <div style="flex:1">
+            <div style="font-size:20px;font-weight:900;color:var(--gold)">${m.name||'—'} ${m.verified?'✅':''}</div>
+            <div style="font-size:12px;color:var(--text2)">${m.email||'—'} | ${m.phone||'—'}</div>
+            <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+              <span class="tag ${m.status==='inactive'?'inactive':'active'}">${m.status||'active'}</span>
+              ${m.memberId?`<span class="tag loan">${m.memberId}</span>`:''}
+            </div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:28px;font-weight:900;color:${scoreColor}">${score}</div>
+            <div style="font-size:10px;color:var(--text2);font-weight:600">CREDIT SCORE</div>
+            <div style="font-size:10px;color:${scoreColor}">${score>=70?'Excellent':score>=40?'Good':'Needs Work'}</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
+          <div><div style="font-size:9px;color:var(--text2);font-weight:700;text-transform:uppercase">भर्ना</div><div style="font-size:12px;font-weight:700">${m.joinDateNP||m.joinDate||'—'}</div></div>
+          <div><div style="font-size:9px;color:var(--text2);font-weight:700;text-transform:uppercase">ठेगाना</div><div style="font-size:12px;font-weight:700">${m.address||'—'}</div></div>
+          <div><div style="font-size:9px;color:var(--text2);font-weight:700;text-transform:uppercase">जन्ममिति</div><div style="font-size:12px;font-weight:700">${m.birthday||'—'}</div></div>
+        </div>
+      </div>
+      <div class="statsGrid" style="grid-template-columns:repeat(4,1fr)">
+        <div class="statCard"><div class="sIcon">✅</div><div class="sVal" style="color:#4ade80;font-size:14px">${fmt(paid)}</div><div class="sLabel">Total Paid</div></div>
+        <div class="statCard"><div class="sIcon">🏦</div><div class="sVal" style="color:#f87171;font-size:14px">${fmt(lDue)}</div><div class="sLabel">Loan Due</div></div>
+        <div class="statCard"><div class="sIcon">🐷</div><div class="sVal" style="color:#34d399;font-size:14px">${fmt(tSav)}</div><div class="sLabel">Savings</div></div>
+        <div class="statCard"><div class="sIcon">⚠️</div><div class="sVal" style="color:#fbbf24;font-size:14px">${fmt(pFines)}</div><div class="sLabel">Fines Due</div></div>
+      </div>
+      ${loans.length>0?`<div class="card" style="margin-bottom:12px">
+        <div class="cardHead">🏦 ऋण</div>
+        <div class="tableWrap"><table><thead><tr><th>रकम</th><th>बाँकी</th><th>ब्याज</th><th>Status</th><th>मिति</th></tr></thead>
+        <tbody>${loans.map(l=>`<tr>
+          <td>${fmt(l.amount)}</td><td style="color:#f87171;font-weight:700">${fmt(l.remaining??l.amount)}</td>
+          <td>${l.rate||0}%</td><td><span class="tag ${l.status==='paid'?'paid':'loan'}">${l.status||'active'}</span></td>
+          <td>${l.issueDate||'—'}</td>
+        </tr>`).join('')}</tbody></table></div>
+      </div>`:''}
+      ${savs.length>0?`<div class="card" style="margin-bottom:12px">
+        <div class="cardHead">🐷 बचत</div>
+        <div class="tableWrap"><table><thead><tr><th>मिति</th><th>रकम</th><th>तरिका</th></tr></thead>
+        <tbody>${savs.slice(0,10).map(s=>`<tr>
+          <td>${s.dateBS||s.date||'—'}</td><td style="color:#34d399;font-weight:700">${fmt(s.amount)}</td><td>${s.method||'Cash'}</td>
+        </tr>`).join('')}</tbody></table></div>
+      </div>`:''}
+      ${fines.length>0?`<div class="card" style="margin-bottom:12px">
+        <div class="cardHead">⚠️ जरिवाना</div>
+        <div class="tableWrap"><table><thead><tr><th>कारण</th><th>रकम</th><th>मिति</th><th>Status</th></tr></thead>
+        <tbody>${fines.map(f=>`<tr>
+          <td>${f.reason||'—'}</td><td style="color:#fbbf24;font-weight:700">${fmt(f.amount)}</td>
+          <td>${f.dateBS||f.date||'—'}</td><td><span class="tag ${f.status==='paid'?'paid':'pending'}">${f.status||'pending'}</span></td>
+        </tr>`).join('')}</tbody></table></div>
+      </div>`:''}
+      <div class="card">
+        <div class="cardHead">💳 कारोबार इतिहास</div>
+        <div class="tableWrap"><table><thead><tr><th>मिति</th><th>Category</th><th>रकम</th><th>तरिका</th></tr></thead>
+        <tbody>${txs.length===0?`<tr><td colspan="4" class="empty">कुनै कारोबार छैन</td></tr>`:
+          txs.slice(0,20).map(t=>`<tr>
+            <td>${t.dateBS||NepaliDate.convert(new Date(t.date||Date.now())).str}</td>
+            <td>${t.category||'—'}</td>
+            <td style="font-weight:800;color:${t.type==='income'?'#4ade80':'#f87171'}">${fmt(t.amount)}</td>
+            <td>${t.method||'Cash'}</td>
+          </tr>`).join('')}
+        </tbody></table></div>
+      </div>`;
+  }catch(e){c.innerHTML=`<div class="empty">Error: ${e.message}</div>`;}
+}
+
+// ============================
+// EDIT MEMBER MODAL
+// ============================
+async function editMemberModal(mId){
+  const doc=await db.collection('users').doc(mId).get();
+  const m=doc.data()||{};
+  const modal=document.createElement('div');
+  modal.className='modalOverlay';
+  modal.innerHTML=`<div class="modalCard" style="max-width:500px">
+    <h2>✏️ सदस्य सम्पादन</h2>
+    <div class="formGrid" style="padding:0">
+      <div class="field"><label>नाम</label><input id="emn" value="${m.name||''}"/></div>
+      <div class="field"><label>फोन</label><input id="emph" value="${m.phone||''}"/></div>
+      <div class="field"><label>सदस्य ID</label><input id="emid" value="${m.memberId||''}"/></div>
+      <div class="field"><label>ठेगाना</label><input id="emad" value="${m.address||''}"/></div>
+      <div class="field"><label>भर्ना मिति (बि.सं.)</label><input id="emjbs" value="${m.joinDateNP||''}"/></div>
+      <div class="field"><label>जन्ममिति</label><input type="date" id="emb" value="${m.birthday||''}"/></div>
+      <div class="field"><label>Verified</label><select id="emv"><option value="true" ${m.verified?'selected':''}>✅ Verified</option><option value="false" ${!m.verified?'selected':''}>⏳ Pending</option></select></div>
+      <div class="field"><label>Status</label><select id="ems"><option value="active" ${m.status==='active'?'selected':''}>Active</option><option value="inactive" ${m.status==='inactive'?'selected':''}>Inactive</option></select></div>
+      <div class="field" style="grid-column:1/-1"><label>Photo (नयाँ)</label><input type="file" id="emphoto" accept="image/*" style="padding:8px"/></div>
+    </div>
+    <div class="modalActions">
+      <button class="btnGhost" onclick="this.closest('.modalOverlay').remove()">Cancel</button>
+      <button class="btnSm" onclick="doEditMember('${mId}')">💾 Save</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+  window.doEditMember=async(id)=>{
+    const u={
+      name:document.getElementById('emn').value.trim(),
+      phone:document.getElementById('emph').value.trim(),
+      memberId:document.getElementById('emid').value.trim(),
+      address:document.getElementById('emad').value.trim(),
+      joinDateNP:document.getElementById('emjbs').value.trim(),
+      birthday:document.getElementById('emb').value,
+      verified:document.getElementById('emv').value==='true',
+      status:document.getElementById('ems').value,
+    };
+    const pf=document.getElementById('emphoto').files[0];
+    if(pf) u.photo=await compressImg(pf,200);
+    await db.collection('users').doc(id).update(u);
+    toast('Profile update भयो!');
+    modal.remove();
+    if(currentPage==='memberprofile') renderMemberProfile();
+    else renderMembersHub();
+  };
+}
+window.editMemberModal=editMemberModal;
+
+// ============================
+// QR CODE DISPLAY
+// ============================
+function showQR(mId,name,memberId,phone){
+  const modal=document.createElement('div');
+  modal.className='modalOverlay';
+  const qrData=`दाजुभाइ समूह\nनाम: ${name}\nID: ${memberId||'—'}\nफोन: ${phone||'—'}`;
+  modal.innerHTML=`<div class="modalCard" style="text-align:center;max-width:300px">
+    <h2>🔐 ${name}</h2>
+    <div style="background:#fff;border-radius:12px;padding:12px;margin:12px auto;width:fit-content">
+      <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(qrData)}" 
+        style="width:180px;height:180px;display:block;border-radius:6px"
+        onerror="this.parentElement.innerHTML='<div style=\'padding:20px;color:#888;font-size:11px\'>QR load bhayena</div>'"/>
+    </div>
+    <div style="text-align:left;background:var(--card2);border-radius:8px;padding:10px;font-size:12px;border:1px solid var(--border)">
+      <div><b style="color:var(--gold)">नाम:</b> ${name}</div>
+      <div><b style="color:var(--gold)">ID:</b> ${memberId||'—'}</div>
+      <div><b style="color:var(--gold)">फोन:</b> ${phone||'—'}</div>
+    </div>
+    <div class="modalActions">
+      <button class="btnGhost" onclick="this.closest('.modalOverlay').remove()">Close</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+}
+window.showQR=showQR;
+
+// ============================
+// QR QUICK ENTRY
+// ============================
+function qrQuickEntry(mId,mName){
+  const modal=document.createElement('div');
+  modal.className='modalOverlay';
+  modal.innerHTML=`<div class="modalCard" style="max-width:360px">
+    <h2>📷 Quick Entry — ${mName}</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+      <button class="btnSm" onclick="doQE('${mId}','${mName}','savings',this.closest('.modalOverlay'))" style="padding:16px;font-size:13px">🐷<br/>बचत</button>
+      <button class="btnSm btnGreen" onclick="doQE('${mId}','${mName}','loan',this.closest('.modalOverlay'))" style="padding:16px;font-size:13px">🏦<br/>ऋण तिर्ने</button>
+      <button class="btnSm" style="background:rgba(245,158,11,0.15);color:var(--gold);padding:16px;font-size:13px" onclick="doQE('${mId}','${mName}','fine',this.closest('.modalOverlay'))">⚠️<br/>जरिवाना</button>
+      <button class="btnSm" style="background:rgba(139,92,246,0.15);color:#a78bfa;padding:16px;font-size:13px" onclick="doQE('${mId}','${mName}','fee',this.closest('.modalOverlay'))">💰<br/>शुल्क</button>
+    </div>
+    <div class="modalActions"><button class="btnGhost" onclick="this.closest('.modalOverlay').remove()">Close</button></div>
+  </div>`;
+  document.body.appendChild(modal);
+  window.doQE=async(id,name,type,m)=>{
+    const amt=Number(prompt(`${name} — ${type} रकम (रु.):`));
+    if(!amt||amt<=0)return;
+    const method=prompt('तरिका (Cash/eSewa/Bank):')||'Cash';
+    const bsDate=NepaliDate.convert(new Date()).str;
+    if(type==='savings'){
+      await db.collection('savings').add({memberId:id,memberName:name,amount:amt,method,date:todayStr(),dateBS:bsDate,note:'Quick Entry',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    } else if(type==='loan'){
+      const ls=await db.collection('loans').where('memberId','==',id).get();
+      const active=ls.docs.filter(d=>d.data().status!=='paid');
+      if(active.length===0){toast('कुनै active loan छैन!','error');return;}
+      const ld=active[0];const nr=Math.max(0,(ld.data().remaining||0)-amt);
+      await ld.ref.update({remaining:nr,status:nr===0?'paid':'partial'});
+    } else if(type==='fine'){
+      const r=prompt('कारण:')||'Rule Violation';
+      await db.collection('fines').add({memberId:id,memberName:name,amount:amt,category:'fine',reason:r,date:todayStr(),dateBS:bsDate,status:'pending',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    }
+    await db.collection('transactions').add({type:'income',category:type==='savings'?'Savings':type==='loan'?'Loan Repayment':'Fee',amount:amt,date:todayStr(),dateBS:bsDate,memberId:id,memberName:name,method,note:'Quick Entry',by:currentUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    await addNotif(`${type==='savings'?'🐷':type==='loan'?'🏦':'💰'} ${name} — ${fmt(amt)} ${type} entry`,'success',id);
+    toast(`${name} को ${type} entry भयो!`);
+    m.remove();renderMembersHub();
+  };
+}
+window.qrQuickEntry=qrQuickEntry;
+
+// ============================
+// MEETINGS + ANNOUNCEMENTS HUB
+// ============================
+async function renderMeetingsHub(){
+  const isAdmin=currentUserData?.role==='admin';
+  const c=document.getElementById('mainContent');
+  window._mhTab=window._mhTab||'meetings';
+  c.innerHTML=`<div class="pageTitle"><span>📅</span>बैठक / सूचना</div>
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <button class="pill${window._mhTab==='meetings'?' active':''}" onclick="window._mhTab='meetings';renderMeetingsHub()">📅 बैठक</button>
+      <button class="pill${window._mhTab==='ann'?' active':''}" onclick="window._mhTab='ann';renderMeetingsHub()">📢 सूचना</button>
+    </div>
+    <div id="mhContent">Loading...</div>`;
+  
+  const tc=document.getElementById('mhContent');
+  if(window._mhTab==='meetings'){
+    const snap=await db.collection('meetings').orderBy('date','desc').get().catch(()=>({docs:[]}));
+    const all=snap.docs.map(d=>({id:d.id,...d.data()}));
+    const up=all.filter(m=>m.date>=todayStr());
+    const past=all.filter(m=>m.date<todayStr());
+    tc.innerHTML=`
+      ${isAdmin?`<div class="formCard"><div class="cardHead">+ नयाँ बैठक</div>
+        <div class="formGrid">
+          <div class="field"><label>शीर्षक</label><input id="mtT" placeholder="मासिक बैठक"/></div>
+          <div class="field"><label>मिति</label><input type="date" id="mtD" value="${todayStr()}"/></div>
+          <div class="field"><label>समय</label><input type="time" id="mtTm"/></div>
+          <div class="field"><label>स्थान</label><input id="mtL" placeholder="क्लब हल"/></div>
+          <div class="field" style="grid-column:1/-1"><label>Agenda</label><textarea id="mtN" rows="2" placeholder="कार्यसूची..."></textarea></div>
+        </div>
+        <div class="formActions"><button class="btnSm" onclick="saveMH()">Save</button></div>
+      </div>`:''}
+      ${up.length>0?`<div class="card">${up.map(m=>`<div style="padding:14px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between">
+          <div>
+            <div style="font-weight:800;color:var(--gold)">${m.title||'—'}</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:3px">📅 ${NepaliDate.convert(new Date(m.date)).str} ${m.time?'⏰ '+m.time:''} ${m.location?'📍 '+m.location:''}</div>
+            ${m.notes?`<div style="font-size:12px;color:var(--text);margin-top:6px;background:var(--card2);padding:8px;border-radius:8px">${m.notes}</div>`:''}
+          </div>
+          ${isAdmin?`<button class="btnDanger" style="padding:4px 8px;flex-shrink:0" onclick="delMH('${m.id}')">🗑</button>`:''}
+        </div>
+      </div>`).join('')}</div>`:'<div class="card"><div class="empty">📅 कुनै आगामी बैठक छैन</div></div>'}
+      ${past.length>0?`<div class="card"><div class="cardHead" style="color:var(--text2)">📂 विगत</div>
+        ${past.slice(0,5).map(m=>`<div style="padding:10px 14px;border-bottom:1px solid var(--border);opacity:0.6">
+          <div style="font-weight:700">${m.title||'—'}</div>
+          <div style="font-size:11px;color:var(--text2)">${m.date}${m.location?' • '+m.location:''}</div>
+        </div>`).join('')}
+      </div>`:''}`;
+    window.saveMH=async()=>{
+      const t=document.getElementById('mtT').value.trim();
+      const d=document.getElementById('mtD').value;
+      if(!t||!d){toast('शीर्षक र मिति चाहिन्छ!','error');return;}
+      await db.collection('meetings').add({title:t,date:d,time:document.getElementById('mtTm').value,location:document.getElementById('mtL').value,notes:document.getElementById('mtN').value,createdBy:currentUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+      await addNotif(`📅 बैठक: ${t} — ${NepaliDate.convert(new Date(d)).str}`,'info','all');
+      toast('बैठक थपियो!');renderMeetingsHub();
+    };
+    window.delMH=async id=>{if(!confirm('Delete?'))return;await db.collection('meetings').doc(id).delete();toast('Deleted!','error');renderMeetingsHub();};
+  } else {
+    const snap=await db.collection('announcements').orderBy('createdAt','desc').get().catch(()=>({docs:[]}));
+    const anns=snap.docs.map(d=>({id:d.id,...d.data()}));
+    tc.innerHTML=`
+      ${isAdmin?`<div class="formCard"><div class="cardHead">+ नयाँ सूचना</div>
+        <div class="formGrid">
+          <div class="field"><label>शीर्षक</label><input id="anT" placeholder="सूचना..."/></div>
+          <div class="field"><label>Pin?</label><select id="anP"><option value="false">No</option><option value="true">📌 Pin</option></select></div>
+          <div class="field" style="grid-column:1/-1"><label>Message</label><textarea id="anB" rows="2" placeholder="विवरण..."></textarea></div>
+        </div>
+        <div class="formActions"><button class="btnSm" onclick="saveAnn2()">Post</button></div>
+      </div>`:''}
+      ${anns.length===0?'<div class="card"><div class="empty">कुनै सूचना छैन</div></div>':
+        anns.map(a=>`<div class="announcement${a.pinned?' pinned':''}">
+          <div style="display:flex;justify-content:space-between">
+            <div class="aTitle">${a.pinned?'📌 ':''}${a.title}</div>
+            ${isAdmin?`<button class="btnDanger" style="padding:3px 7px;font-size:11px" onclick="delAnn2('${a.id}')">🗑</button>`:''}
+          </div>
+          <div class="aBody">${a.body}</div>
+          <div class="aMeta">${a.author||'Admin'} • ${a.createdAt?.toDate?fmtTime(a.createdAt.toDate()):''}</div>
+        </div>`).join('')}`;
+    window.saveAnn2=async()=>{
+      const t=document.getElementById('anT').value.trim();
+      const b=document.getElementById('anB').value.trim();
+      if(!t||!b){toast('शीर्षक र message!','error');return;}
+      await db.collection('announcements').add({title:t,body:b,pinned:document.getElementById('anP').value==='true',author:currentUserData?.name||'Admin',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+      await addNotif(`📢 ${t}: ${b.substring(0,50)}`,'info','all');
+      toast('सूचना post भयो!');renderMeetingsHub();
+    };
+    window.delAnn2=async id=>{if(!confirm('Delete?'))return;await db.collection('announcements').doc(id).delete();toast('Deleted!','error');renderMeetingsHub();};
+  }
+}
+
+// ============================
+// SETTINGS PAGE
+// ============================
+function renderSettings(){
+  const c=document.getElementById('mainContent');
+  const hasPin=!!localStorage.getItem('appPin');
+  const isAdmin=currentUserData?.role==='admin';
+  c.innerHTML=`<div class="pageTitle"><span>⚙️</span>Settings</div>
+    <!-- Theme -->
+    <div class="card" style="padding:18px;margin-bottom:12px">
+      <div style="font-weight:800;color:var(--gold);margin-bottom:12px">🎨 Theme</div>
+      <div style="display:flex;gap:8px">
+        <button class="pill${!isDark?' active':''}" onclick="if(isDark)toggleDark()">☀️ Light</button>
+        <button class="pill${isDark?' active':''}" onclick="if(!isDark)toggleDark()">🌙 Dark</button>
+      </div>
+    </div>
+    <!-- Language -->
+    <div class="card" style="padding:18px;margin-bottom:12px">
+      <div style="font-weight:800;color:var(--gold);margin-bottom:12px">🌐 Language</div>
+      <div style="display:flex;gap:8px">
+        <button class="pill${!isNepali?' active':''}" onclick="if(isNepali)toggleLang()">English</button>
+        <button class="pill${isNepali?' active':''}" onclick="if(!isNepali)toggleLang()">नेपाली</button>
+      </div>
+    </div>
+    <!-- PIN -->
+    <div class="card" style="padding:18px;margin-bottom:12px">
+      <div style="font-weight:800;color:var(--gold);margin-bottom:8px">🔐 PIN Lock</div>
+      <span class="tag ${hasPin?'active':'inactive'}" style="margin-bottom:10px;display:inline-block">${hasPin?'✅ PIN Active':'❌ PIN छैन'}</span>
+      <div class="field"><label>${hasPin?'PIN बदल्नुहोस्':'PIN राख्नुहोस्'} (4 digits)</label>
+        <input type="password" id="pi" maxlength="4" placeholder="1234" inputmode="numeric" style="max-width:150px"/>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="btnSm" onclick="const p=document.getElementById('pi').value;if(p.length!==4||isNaN(p)){toast('4 digit!','error');return;}localStorage.setItem('appPin',p);toast('PIN save भयो!');renderSettings()">Save PIN</button>
+        ${hasPin?`<button class="btnDanger" onclick="localStorage.removeItem('appPin');toast('PIN हटाइयो!');renderSettings()">Remove</button>`:''}
+      </div>
+    </div>
+    <!-- Password -->
+    <div class="card" style="padding:18px;margin-bottom:12px">
+      <div style="font-weight:800;color:var(--gold);margin-bottom:12px">🔑 Password बदल्नुहोस्</div>
+      <div class="formGrid" style="padding:0">
+        <div class="field"><label>नयाँ</label><input type="password" id="np" placeholder="Min 6"/></div>
+        <div class="field"><label>Confirm</label><input type="password" id="cp" placeholder="Confirm"/></div>
+      </div>
+      <button class="btnSm" style="margin-top:10px" onclick="const n=document.getElementById('np').value,c=document.getElementById('cp').value;if(!n||n.length<6){toast('6+ chars!','error');return;}if(n!==c){toast('Match भएन!','error');return;}currentUser.updatePassword(n).then(()=>toast('Password बदलियो!')).catch(e=>toast(e.code==='auth/requires-recent-login'?'फेरि login गर्नुहोस्!':e.message,'error'))">Update</button>
+    </div>
+    <!-- Bank Rates -->
+    <div class="card" style="padding:18px;margin-bottom:12px">
+      <div style="font-weight:800;color:var(--gold);margin-bottom:12px">🏦 नेपाल बैंक ब्याज दर (अनुमानित)</div>
+      <div class="tableWrap"><table>
+        <thead><tr><th>बैंक</th><th>बचत</th><th>FD</th><th>ऋण</th></tr></thead>
+        <tbody>
+          <tr><td>नेपाल बैंक</td><td style="color:#34d399">5.5%</td><td style="color:#34d399">9-11%</td><td style="color:#f87171">11-14%</td></tr>
+          <tr><td>NIC Asia</td><td style="color:#34d399">6%</td><td style="color:#34d399">9-12%</td><td style="color:#f87171">12-15%</td></tr>
+          <tr><td>Nabil Bank</td><td style="color:#34d399">5.5%</td><td style="color:#34d399">9-11%</td><td style="color:#f87171">11-13%</td></tr>
+          <tr><td>Everest Bank</td><td style="color:#34d399">6%</td><td style="color:#34d399">9-12%</td><td style="color:#f87171">12-14%</td></tr>
+        </tbody>
+      </table></div>
+      <div style="font-size:10px;color:var(--text2);margin-top:8px">⚠️ वास्तविक दरको लागि सम्बन्धित बैंकमा सम्पर्क गर्नुहोस्</div>
+    </div>
+    ${isAdmin?`
+    <!-- Backup -->
+    <div class="card" style="padding:18px;margin-bottom:12px">
+      <div style="font-weight:800;color:var(--gold);margin-bottom:10px">📊 Data Backup</div>
+      <button class="btnSm btnGreen" onclick="exportAllDataExcel()">📊 Excel Backup</button>
+    </div>`:''}
+    <!-- About -->
+    <div class="card" style="padding:18px">
+      <div style="font-weight:800;color:var(--gold);margin-bottom:8px">ℹ️ About</div>
+      <div style="font-size:13px;color:var(--text2);line-height:1.8">
+        <b style="color:var(--text)">दाजुभाइ समूह Finance</b><br/>
+        Version 2.1 | ESTD 2025<br/>
+        Dhanjugaon, Bhaktapur
+      </div>
+    </div>`;
+}
+
+// ============================
+// PAY REQUEST (Member)
+// ============================
+async function renderPayRequest(){
+  const c=document.getElementById('mainContent');
+  const snap=await db.collection('payRequests').where('memberId','==',currentUser.uid).get().catch(()=>({docs:[]}));
+  const reqs=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'0')>(a.date||'0')?1:-1);
+  c.innerHTML=`<div class="pageTitle"><span>💸</span>भुक्तानी अनुरोध</div>
+    <div class="formCard">
+      <div class="cardHead" style="color:var(--gold)">Admin लाई अनुरोध पठाउनुहोस्</div>
+      <div style="padding:16px">
+        <div class="formGrid" style="padding:0">
+          <div class="field"><label>प्रकार</label><select id="prt"><option value="savings">🐷 बचत</option><option value="loan">🏦 ऋण तिर्ने</option><option value="fine">⚠️ जरिवाना</option><option value="fee">💰 शुल्क</option></select></div>
+          <div class="field"><label>रकम (रु.)</label><input type="number" id="pra" placeholder="५०००"/></div>
+          <div class="field"><label>तरिका</label><select id="prm"><option>Cash</option><option>eSewa</option><option>Khalti</option><option>Bank Transfer</option></select></div>
+          <div class="field"><label>मिति</label><input type="date" id="prd" value="${todayStr()}"/></div>
+          <div class="field" style="grid-column:1/-1"><label>नोट</label><textarea id="prn" rows="2" placeholder="विवरण..."></textarea></div>
+        </div>
+        <button class="btnSm" style="margin-top:12px" onclick="doPayReq()">📤 अनुरोध पठाउनुहोस्</button>
+      </div>
+    </div>
+    ${reqs.length>0?`<div class="card"><div class="tableWrap"><table>
+      <thead><tr><th>प्रकार</th><th>रकम</th><th>मिति</th><th>Status</th></tr></thead>
+      <tbody>${reqs.map(r=>`<tr>
+        <td>${r.type||'—'}</td><td style="color:var(--gold);font-weight:700">${fmt(r.amount)}</td>
+        <td>${r.dateBS||r.date||'—'}</td>
+        <td><span class="tag ${r.status==='approved'?'approved':r.status==='rejected'?'rejected':'pending'}">${r.status||'pending'}</span></td>
+      </tr>`).join('')}</tbody>
+    </table></div></div>`:''}`;
+  window.doPayReq=async()=>{
+    const amt=Number(document.getElementById('pra').value);
+    if(!amt||amt<=0){toast('रकम हाल्नुहोस्!','error');return;}
+    const bsDate=NepaliDate.convert(new Date(document.getElementById('prd').value)).str;
+    await db.collection('payRequests').add({
+      memberId:currentUser.uid,memberName:currentUserData?.name||'',
+      type:document.getElementById('prt').value,
+      amount:amt,method:document.getElementById('prm').value,
+      date:document.getElementById('prd').value,dateBS:bsDate,
+      note:document.getElementById('prn').value,
+      status:'pending',createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await addNotif(`💸 ${currentUserData?.name} ले ${fmt(amt)} request गरे!`,'info','admin');
+    toast('अनुरोध पठाइयो!');renderPayRequest();
+  };
+}
+
+// ============================
+// ANNUAL REPORT
+// ============================
+async function renderAnnualReport(){
+  const c=document.getElementById('mainContent');
+  const [txSnap,sSnap,lSnap,fSnap,mSnap]=await Promise.all([
+    db.collection('transactions').get(),
+    db.collection('savings').get(),
+    db.collection('loans').get(),
+    db.collection('fines').get(),
+    db.collection('users').where('role','==','member').get(),
+  ]);
+  const txs=txSnap.docs.map(d=>d.data());
+  const savs=sSnap.docs.map(d=>d.data());
+  const loans=lSnap.docs.map(d=>d.data());
+  const fines=fSnap.docs.map(d=>d.data());
+  const members=mSnap.docs.map(d=>({id:d.id,...d.data()}));
+  const tInc=txs.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
+  const tExp=txs.filter(t=>t.type==='expense').reduce((a,t)=>a+t.amount,0);
+  const tSav=savs.reduce((a,s)=>a+s.amount,0);
+  const tLoan=loans.filter(l=>l.status!=='paid').reduce((a,l)=>a+(l.remaining||0),0);
+  c.innerHTML=`<div class="pageTitle"><span>📊</span>वार्षिक रिपोर्ट</div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      <button class="btnSm" onclick="printAnnual()">🖨️ Print</button>
+      <button class="btnSm btnGreen" onclick="exportAllDataExcel()">📊 Excel</button>
+    </div>
+    <div class="statsGrid">
+      <div class="statCard"><div class="sIcon">💰</div><div class="sVal" style="color:#4ade80">${fmt(tInc)}</div><div class="sLabel">कुल आम्दानी</div></div>
+      <div class="statCard"><div class="sIcon">📤</div><div class="sVal" style="color:#f87171">${fmt(tExp)}</div><div class="sLabel">कुल खर्च</div></div>
+      <div class="statCard"><div class="sIcon">🏦</div><div class="sVal" style="color:var(--gold)">${fmt(tInc-tExp)}</div><div class="sLabel">मौज्दात</div></div>
+      <div class="statCard"><div class="sIcon">🐷</div><div class="sVal" style="color:#34d399">${fmt(tSav)}</div><div class="sLabel">कुल बचत</div></div>
+      <div class="statCard"><div class="sIcon">🏦</div><div class="sVal" style="color:#f87171">${fmt(tLoan)}</div><div class="sLabel">ऋण बाँकी</div></div>
+    </div>
+    <div class="card">
+      <div class="cardHead">सदस्यवार सारांश</div>
+      <div class="tableWrap"><table>
+        <thead><tr><th>सदस्य</th><th>बचत</th><th>ऋण बाँकी</th><th>जरिवाना</th></tr></thead>
+        <tbody>${members.map(m=>{
+          const ms=savs.filter(s=>s.memberId===m.id).reduce((a,s)=>a+s.amount,0);
+          const ml=loans.filter(l=>l.memberId===m.id&&l.status!=='paid').reduce((a,l)=>a+(l.remaining||0),0);
+          const mf=fines.filter(f=>f.memberId===m.id&&f.status==='pending').reduce((a,f)=>a+f.amount,0);
+          return`<tr><td style="font-weight:700">${m.name||'—'}</td>
+            <td style="color:#34d399;font-weight:700">${fmt(ms)}</td>
+            <td style="color:${ml>0?'#f87171':'#4ade80'};font-weight:700">${fmt(ml)}</td>
+            <td style="color:${mf>0?'#fbbf24':'#4ade80'};font-weight:700">${fmt(mf)}</td>
+          </tr>`;}).join('')}
+        </tbody>
+      </table></div>
+    </div>`;
+  window.printAnnual=()=>{
+    const w=window.open('','_blank');
+    w.document.write(`<html><head><title>Annual Report</title>
+      <style>body{font-family:Arial,sans-serif;padding:30px}table{width:100%;border-collapse:collapse}td,th{padding:8px;border:1px solid #ddd}th{background:#f5f5f5}@media print{button{display:none}}</style>
+    </head><body>
+      <h1 style="text-align:center">दाजुभाइ समूह — वार्षिक रिपोर्ट</h1>
+      <button onclick="window.print()" style="padding:8px 16px;background:#16a34a;color:#fff;border:none;border-radius:6px;cursor:pointer;margin-bottom:16px">🖨️ Print</button>
+      <p>आम्दानी: ${fmt(tInc)} | खर्च: ${fmt(tExp)} | मौज्दात: ${fmt(tInc-tExp)} | बचत: ${fmt(tSav)}</p>
+      <table><tr><th>सदस्य</th><th>बचत</th><th>ऋण बाँकी</th><th>जरिवाना</th></tr>
+      ${members.map(m=>{const ms=savs.filter(s=>s.memberId===m.id).reduce((a,s)=>a+s.amount,0);const ml=loans.filter(l=>l.memberId===m.id&&l.status!=='paid').reduce((a,l)=>a+(l.remaining||0),0);const mf=fines.filter(f=>f.memberId===m.id&&f.status==='pending').reduce((a,f)=>a+f.amount,0);return`<tr><td>${m.name}</td><td>${fmt(ms)}</td><td>${fmt(ml)}</td><td>${fmt(mf)}</td></tr>`;}).join('')}
+      </table>
+    </body></html>`);
+    w.document.close();
+  };
+}
+
+// ============================
+// LOGIN LOGS - Per member
+// ============================
+async function renderLoginLogs(){
+  const c=document.getElementById('mainContent');
+  const snap=await db.collection('loginLogs').orderBy('time','desc').limit(500).get();
+  const logs=snap.docs.map(d=>d.data());
+  const byEmail={};
+  logs.forEach(l=>{
+    const k=l.email||'Unknown';
+    if(!byEmail[k])byEmail[k]={email:k,count:0,last:null,device:l.device||'—',logs:[]};
+    byEmail[k].count++;
+    if(!byEmail[k].last)byEmail[k].last=l;
+    if(byEmail[k].logs.length<10)byEmail[k].logs.push(l);
+  });
+  c.innerHTML=`<div class="pageTitle"><span>🕐</span>Login Log</div>
+    <div class="memberGrid">
+      ${Object.values(byEmail).map(m=>`<div class="memberCard">
+        <div style="font-weight:800;color:var(--gold);margin-bottom:6px">📧 ${m.email}</div>
+        <div style="font-size:12px;color:var(--text2)">${m.device} | ${m.count} पटक</div>
+        <div style="font-size:12px;margin-top:6px">
+          <b>अन्तिम:</b> ${m.last?.dateBS||'—'} ${m.last?.time?.toDate?fmtTime(m.last.time.toDate()):'—'}
+        </div>
+        <button class="pill" style="margin-top:10px;width:100%" onclick="showLogHistory('${m.email}')">📋 इतिहास (${m.count})</button>
+      </div>`).join('')}
+    </div>`;
+  window.showLogHistory=(email)=>{
+    const ml=byEmail[email];
+    if(!ml)return;
+    const modal=document.createElement('div');modal.className='modalOverlay';
+    modal.innerHTML=`<div class="modalCard"><h2>🕐 ${email}</h2>
+      <div class="tableWrap"><table><thead><tr><th>मिति (बि.सं.)</th><th>Device</th><th>समय</th></tr></thead>
+      <tbody>${ml.logs.map(l=>`<tr>
+        <td style="color:var(--gold)">${l.dateBS||'—'}</td>
+        <td>${l.device||'—'}</td>
+        <td>${l.time?.toDate?fmtTime(l.time.toDate()):'—'}</td>
+      </tr>`).join('')}</tbody></table></div>
+      <div class="modalActions"><button class="btnGhost" onclick="this.closest('.modalOverlay').remove()">Close</button></div>
+    </div>`;
+    document.body.appendChild(modal);
+  };
+}
+
+// ============================
+// PAY REQUESTS ADMIN PAGE
+// ============================
+async function renderPayRequestsPage(){
+  navigate('members');
+  window._mTab='pay';
+}
+
 </script>
 </body>
 </html>
