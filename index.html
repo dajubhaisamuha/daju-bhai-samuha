@@ -892,7 +892,7 @@ const NP_LABELS = {
   'Notifications':'सूचनाहरू','Login Logs':'लगइन लग','PIN Settings':'पिन सेटिङ',
   'My Fees':'मेरो शुल्क','My Loans':'मेरो ऋण','Loan Request':'ऋण निवेदन',
   'My Savings':'मेरो बचत','My Profile':'मेरो प्रोफाइल',
-  'Pay Request':'भुक्तानी अनुरोध','Settings':'सेटिङ',
+  'Pay Request':'भुक्तानी अनुरोध','Settings':'सेटिङ','Loan Request':'ऋण निवेदन',
 };
 function toggleLang(){
   isNepali=!isNepali;
@@ -1071,6 +1071,7 @@ const memberLinks=[
   {id:'myfees',icon:'💰',label:'My Fees'},
   {id:'myloans',icon:'🏦',label:'My Loans'},
   {id:'mysavings',icon:'🐷',label:'My Savings'},
+  {id:'loanrequest',icon:'📝',label:'Loan Request'},
   {id:'payrequest',icon:'💸',label:'Pay Request'},
   {id:'meetings',icon:'📅',label:'Meetings'},
   {id:'notifications',icon:'🔔',label:'Notifications',badge:'notifSideBadge'},
@@ -1295,6 +1296,7 @@ function renderPage(page){
     reports:()=>isAdmin?renderReports():navigate('dashboard'),
     notifications:renderNotifications,
     loanrequests:()=>isAdmin?renderLoanRequests():navigate('dashboard'),
+    loanrequest:()=>!isAdmin?renderLoanRequestForm():navigate('dashboard'),
     loginlogs:()=>isAdmin?renderLoginLogs():navigate('dashboard'),
     settings:renderSettings,
     myfees:renderMyFees,
@@ -1304,6 +1306,7 @@ function renderPage(page){
     profile:renderProfile,
     chat:renderChat,
     activitylog:()=>isAdmin?renderActivityLog():navigate('dashboard'),
+    interest:()=>isAdmin?renderInterest():navigate('dashboard'),
   };
   try{
     if(pages[page]) pages[page]();
@@ -1374,14 +1377,14 @@ async function renderDashboard(){
           </div>
         </div>`:''}
         <div class="statsGrid">
-          <div class="statCard" onclick="navigate('transactions')" style="cursor:pointer"><div class="sIcon">💰</div><div class="sVal" style="color:#4ade80">${fmt(inc)}</div><div class="sLabel">Total Income</div></div>
+          <div class="statCard" onclick="navigate('transactions')" style="cursor:pointer"><div class="sIcon">💰</div><div class="sVal" style="color:#34d399">${fmt(inc)}</div><div class="sLabel">Total Income</div></div>
           <div class="statCard" onclick="navigate('transactions')" style="cursor:pointer"><div class="sIcon">📤</div><div class="sVal" style="color:#f87171">${fmt(exp)}</div><div class="sLabel">Total Expense</div></div>
-          <div class="statCard" onclick="navigate('reports')" style="cursor:pointer"><div class="sIcon">🏦</div><div class="sVal" style="color:var(--gold)">${fmt(inc-exp)}</div><div class="sLabel">Balance</div></div>
+          <div class="statCard" onclick="navigate('reports')" style="cursor:pointer;background:linear-gradient(135deg,rgba(59,130,246,0.08),rgba(99,102,241,0.04));border-color:rgba(59,130,246,0.25)"><div class="sIcon">⚖️</div><div class="sVal" style="color:#60a5fa">${fmt(inc-exp)}</div><div class="sLabel">Net Balance</div></div>
           <div class="statCard" onclick="navigate('members')" style="cursor:pointer"><div class="sIcon">👥</div><div class="sVal" style="color:#a78bfa">${mSnap.size}</div><div class="sLabel">Members</div></div>
-          <div class="statCard" onclick="navigate('loans')" style="cursor:pointer"><div class="sIcon">⚠️</div><div class="sVal" style="color:#fbbf24">${fmt(lDue)}</div><div class="sLabel">Loan Due</div></div>
-          <div class="statCard" onclick="navigate('savings')" style="cursor:pointer"><div class="sIcon">🐷</div><div class="sVal" style="color:#34d399">${fmt(tSav)}</div><div class="sLabel">Total Savings</div></div>
-          <div class="statCard" onclick="navigate('fines')" style="cursor:pointer"><div class="sIcon">🚨</div><div class="sVal" style="color:#f87171">${fmt(tFines)}</div><div class="sLabel">Pending Fines</div></div>
-          <div class="statCard" style="cursor:pointer;background:linear-gradient(135deg,rgba(99,102,241,0.1),rgba(139,92,246,0.05));border-color:rgba(99,102,241,0.3)"><div class="sIcon">💹</div><div class="sVal" style="color:#818cf8">${fmt(tInterest)}</div><div class="sLabel">Total Interest</div></div>
+          <div class="statCard" onclick="navigate('loans')" style="cursor:pointer"><div class="sIcon">📌</div><div class="sVal" style="color:#fb923c">${fmt(lDue)}</div><div class="sLabel">Loan Outstanding</div></div>
+          <div class="statCard" onclick="navigate('savings')" style="cursor:pointer"><div class="sIcon">🏦</div><div class="sVal" style="color:#34d399">${fmt(tSav)}</div><div class="sLabel">Total Savings</div></div>
+          <div class="statCard" onclick="navigate('fines')" style="cursor:pointer"><div class="sIcon">⚠️</div><div class="sVal" style="color:#f87171">${fmt(tFines)}</div><div class="sLabel">Pending Fines</div></div>
+          <div class="statCard" onclick="navigate('interest')" style="cursor:pointer;background:linear-gradient(135deg,rgba(99,102,241,0.08),rgba(139,92,246,0.04));border-color:rgba(99,102,241,0.25)"><div class="sIcon">💹</div><div class="sVal" style="color:#818cf8">${fmt(tInterest)}</div><div class="sLabel">Bank Interest</div></div>
         </div>
         <div class="card">
           <div class="cardHead">Recent Transactions <span class="ch-badge">${recent.length} records</span></div>
@@ -2570,9 +2573,10 @@ async function renderProfile(){
   const onTime=txSnap.docs.filter(d=>d.data().type==='income').length;
   const late=fineSnap.docs.filter(d=>(d.data().reason||'').includes('Late')).length;
   const pFines=fineSnap.docs.filter(d=>d.data().status==='pending').length;
-  const score=Math.min(100,Math.max(0,50+onTime*5-late*10-pFines*5));
-  const sc=score>=70?'#4ade80':score>=40?'#fbbf24':'#f87171';
-  const sLabel=score>=70?'Excellent':score>=40?'Good':'Poor';
+  const score=Math.min(850,Math.max(300,300+onTime*25-late*40-pFines*15));
+  const scPct=Math.round((score-300)/550*100);
+  const sc=score>=700?'#10b981':score>=550?'#f59e0b':'#ef4444';
+  const sLabel=score>=700?'Excellent':score>=600?'Good':score>=500?'Fair':'Poor';
   c.innerHTML=`
     <div class="pageTitle"><span>👤</span>My Profile</div>
     <div class="card" style="padding:24px">
@@ -2587,10 +2591,16 @@ async function renderProfile(){
             ${d.memberId?`<span class="tag loan">${d.memberId}</span>`:''}
           </div>
         </div>
-        <div style="text-align:center;background:var(--card2);border-radius:14px;padding:14px 18px;border:1px solid var(--border)">
-          <div style="font-size:32px;font-weight:900;color:${sc}">${score}</div>
-          <div style="font-size:9px;color:var(--text2);font-weight:700;letter-spacing:.8px">CREDIT SCORE</div>
-          <div style="font-size:11px;color:${sc};font-weight:700;margin-top:2px">${sLabel}</div>
+        <div style="min-width:140px;background:var(--card2);border-radius:14px;padding:14px 16px;border:1px solid var(--border)">
+          <div style="font-size:10px;color:var(--text2);font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-bottom:6px">Credit Score</div>
+          <div style="display:flex;align-items:baseline;gap:4px;margin-bottom:6px">
+            <span style="font-size:28px;font-weight:900;color:${sc}">${score}</span>
+            <span style="font-size:10px;color:var(--text2)">/850</span>
+          </div>
+          <div style="background:var(--border);border-radius:6px;height:6px;overflow:hidden;margin-bottom:6px">
+            <div style="width:${scPct}%;height:6px;border-radius:6px;background:linear-gradient(90deg,#ef4444,#f59e0b,#10b981);transition:width .8s"></div>
+          </div>
+          <div style="font-size:11px;font-weight:800;color:${sc}">${sLabel}</div>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;border-top:1px solid var(--border);padding-top:16px">
@@ -2768,8 +2778,10 @@ async function renderMemberProfile(){
     const pF=fines.filter(f=>f.status==='pending').reduce((a,f)=>a+(f.amount||0),0);
     const onTime=txs.filter(t=>t.type==='income').length;
     const late=fines.filter(f=>(f.reason||'').includes('Late')).length;
-    const score=Math.min(100,Math.max(0,50+onTime*5-late*10));
-    const sc=score>=70?'#4ade80':score>=40?'#fbbf24':'#f87171';
+    const score=Math.min(850,Math.max(300,300+onTime*25-late*40));
+    const scPct=Math.round((score-300)/550*100);
+    const sc=score>=700?'#10b981':score>=550?'#f59e0b':'#ef4444';
+    const sLabel=score>=700?'Excellent':score>=600?'Good':score>=500?'Fair':'Poor';
     c.innerHTML=`
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
         <button class="btnGhost" onclick="navigate('members')" style="padding:7px 12px;font-size:12px">← Back</button>
@@ -2778,7 +2790,7 @@ async function renderMemberProfile(){
         <button class="pill" onclick="qrEntry('${mId}','${(m.name||'').replace(/'/g,'')}')">📷 Quick Entry</button>
       </div>
       <div class="card" style="padding:18px;margin-bottom:12px">
-        <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+        <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">
           ${m.photo&&m.photo.length>10?`<img src="${m.photo}" style="width:65px;height:65px;border-radius:50%;border:3px solid var(--gold);object-fit:cover"/>`:
             `<div class="avatar" style="width:65px;height:65px;font-size:22px">${(m.name||'U').substring(0,2).toUpperCase()}</div>`}
           <div style="flex:1">
@@ -2789,10 +2801,16 @@ async function renderMemberProfile(){
               ${m.memberId?`<span class="tag loan">${m.memberId}</span>`:''}
             </div>
           </div>
-          <div style="text-align:center;background:var(--card2);border-radius:12px;padding:12px;border:1px solid var(--border)">
-            <div style="font-size:26px;font-weight:900;color:${sc}">${score}</div>
-            <div style="font-size:9px;color:var(--text2);font-weight:700">CREDIT SCORE</div>
-            <div style="font-size:10px;color:${sc}">${score>=70?'Excellent':score>=40?'Good':'Poor'}</div>
+          <div style="min-width:140px;background:var(--card2);border-radius:14px;padding:14px 16px;border:1px solid var(--border)">
+            <div style="font-size:10px;color:var(--text2);font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-bottom:6px">Credit Score</div>
+            <div style="display:flex;align-items:baseline;gap:4px;margin-bottom:6px">
+              <span style="font-size:28px;font-weight:900;color:${sc}">${score}</span>
+              <span style="font-size:10px;color:var(--text2)">/850</span>
+            </div>
+            <div style="background:var(--border);border-radius:6px;height:6px;overflow:hidden;margin-bottom:6px">
+              <div style="width:${scPct}%;height:6px;border-radius:6px;background:linear-gradient(90deg,#ef4444,#f59e0b,#10b981);transition:width .8s"></div>
+            </div>
+            <div style="font-size:11px;font-weight:800;color:${sc}">${sLabel}</div>
           </div>
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:12px;border-top:1px solid var(--border);padding-top:10px;font-size:12px">
