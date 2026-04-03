@@ -888,10 +888,11 @@ const NP_LABELS = {
   'Dashboard':'ड्यासबोर्ड','Announcements':'सूचना','Transactions':'कारोबार',
   'Loans':'ऋण','Loan Requests':'ऋण निवेदन','Savings':'बचत',
   'Fines & Dues':'जरिवाना','Bank Interest':'बैंक व्याज','Members':'सदस्य',
-  'Meetings':'बैठक','Reports':'रिपोर्ट','Group Chat':'समूह च्याट',
+  'Meetings':'बैठक / सूचना','Reports':'रिपोर्ट','Group Chat':'समूह च्याट',
   'Notifications':'सूचनाहरू','Login Logs':'लगइन लग','PIN Settings':'पिन सेटिङ',
   'My Fees':'मेरो शुल्क','My Loans':'मेरो ऋण','Loan Request':'ऋण निवेदन',
   'My Savings':'मेरो बचत','My Profile':'मेरो प्रोफाइल',
+  'Pay Request':'भुक्तानी अनुरोध','Settings':'सेटिङ',
 };
 function toggleLang(){
   isNepali=!isNepali;
@@ -1054,26 +1055,26 @@ async function doResetPassword(){
 // ====== SIDEBAR ======
 const adminLinks=[
   {id:'dashboard',icon:'📊',label:'Dashboard'},
-  {id:'transactions',icon:'💳',label:'कारोबार'},
-  {id:'loans',icon:'🏦',label:'ऋण'},
-  {id:'savings',icon:'🐷',label:'बचत'},
-  {id:'fines',icon:'⚠️',label:'जरिवाना'},
-  {id:'members',icon:'👥',label:'सदस्यहरू'},
-  {id:'meetings',icon:'📅',label:'बैठक / सूचना'},
-  {id:'reports',icon:'📈',label:'रिपोर्ट'},
-  {id:'notifications',icon:'🔔',label:'सूचनाहरू',badge:'notifSideBadge'},
-  {id:'loginlogs',icon:'🕐',label:'Login Log'},
+  {id:'transactions',icon:'💳',label:'Transactions'},
+  {id:'loans',icon:'🏦',label:'Loans'},
+  {id:'savings',icon:'🐷',label:'Savings'},
+  {id:'fines',icon:'⚠️',label:'Fines & Dues'},
+  {id:'members',icon:'👥',label:'Members'},
+  {id:'meetings',icon:'📅',label:'Meetings'},
+  {id:'reports',icon:'📈',label:'Reports'},
+  {id:'notifications',icon:'🔔',label:'Notifications',badge:'notifSideBadge'},
+  {id:'loginlogs',icon:'🕐',label:'Login Logs'},
   {id:'settings',icon:'⚙️',label:'Settings'},
 ];
 const memberLinks=[
   {id:'dashboard',icon:'📊',label:'Dashboard'},
-  {id:'myfees',icon:'💰',label:'मेरो शुल्क'},
-  {id:'myloans',icon:'🏦',label:'मेरो ऋण'},
-  {id:'mysavings',icon:'🐷',label:'मेरो बचत'},
-  {id:'payrequest',icon:'💸',label:'भुक्तानी अनुरोध'},
-  {id:'meetings',icon:'📅',label:'बैठक / सूचना'},
-  {id:'notifications',icon:'🔔',label:'सूचनाहरू',badge:'notifSideBadge'},
-  {id:'profile',icon:'👤',label:'मेरो Profile'},
+  {id:'myfees',icon:'💰',label:'My Fees'},
+  {id:'myloans',icon:'🏦',label:'My Loans'},
+  {id:'mysavings',icon:'🐷',label:'My Savings'},
+  {id:'payrequest',icon:'💸',label:'Pay Request'},
+  {id:'meetings',icon:'📅',label:'Meetings'},
+  {id:'notifications',icon:'🔔',label:'Notifications',badge:'notifSideBadge'},
+  {id:'profile',icon:'👤',label:'My Profile'},
   {id:'settings',icon:'⚙️',label:'Settings'},
 ];
 
@@ -1339,7 +1340,7 @@ async function renderDashboard(){
   const isAdmin=currentUserData?.role==='admin';
   try{
     if(isAdmin){
-      const [txSnap,mSnap,lSnap,sSnap,fSnap,annSnap,lrSnap]=await Promise.all([
+      const [txSnap,mSnap,lSnap,sSnap,fSnap,annSnap,lrSnap,intSnap]=await Promise.all([
         db.collection('transactions').get(),
         db.collection('users').where('role','==','member').get(),
         db.collection('loans').get(),
@@ -1347,6 +1348,7 @@ async function renderDashboard(){
         db.collection('fines').get(),
         db.collection('announcements').orderBy('createdAt','desc').limit(2).get().catch(()=>({docs:[]})),
         db.collection('loanRequests').get().catch(()=>({docs:[]})),
+        db.collection('interest').get().catch(()=>({docs:[]})),
       ]);
       const txs=txSnap.docs.map(d=>d.data());
       const inc=txs.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
@@ -1354,6 +1356,7 @@ async function renderDashboard(){
       const lDue=lSnap.docs.filter(d=>d.data().status!=='paid').reduce((a,d)=>a+(d.data().remaining||0),0);
       const tSav=sSnap.docs.reduce((a,d)=>a+(d.data().amount||0),0);
       const tFines=fSnap.docs.filter(d=>d.data().status==='pending').reduce((a,d)=>a+(d.data().amount||0),0);
+      const tInterest=intSnap.docs.reduce((a,d)=>a+(d.data().interest||0),0);
       const recent=txSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'')>(a.date||'')?1:-1).slice(0,5);
       const anns=annSnap.docs.map(d=>({id:d.id,...d.data()}));
       const pendingLR=lrSnap.docs.filter(d=>d.data().status==='pending').length;
@@ -1361,12 +1364,12 @@ async function renderDashboard(){
       c.innerHTML=`
         <div class="pageTitle"><span>📊</span>Dashboard</div>
         ${pendingLR>0?`<div class="dueAlert">📋 ${pendingLR} loan request pending cha! <button class="btnSm" style="margin-left:auto;padding:6px 12px;font-size:11px" onclick="navigate('loanrequests')">View →</button></div>`:''}
-        ${anns.length>0?`<div onclick="navigate('meetings')" style="background:linear-gradient(135deg,rgba(245,158,11,0.08),rgba(34,197,94,0.04));border:1px solid rgba(245,158,11,0.2);border-radius:12px;padding:12px 16px;margin-bottom:14px;cursor:pointer">
-          <div style="font-size:10px;color:var(--gold);font-weight:700;letter-spacing:.8px;margin-bottom:8px">📌 BULLETIN BOARD</div>
+        ${anns.length>0?`<div style="margin-bottom:14px">
+          <div style="font-size:11px;font-weight:800;color:#3b82f6;letter-spacing:1px;margin-bottom:8px;text-transform:uppercase">📌 Bulletin Board</div>
           <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:4px">
-            ${anns.map(a=>`<div style="min-width:190px;background:rgba(0,0,0,0.25);border-radius:10px;padding:10px;border:1px solid rgba(245,158,11,0.15);flex-shrink:0">
-              <div style="font-size:12px;font-weight:800;color:var(--gold)">${a.pinned?'📌 ':'📢 '}${a.title}</div>
-              <div style="font-size:11px;color:var(--text2);margin-top:4px">${(a.body||'').substring(0,55)}${(a.body||'').length>55?'...':''}</div>
+            ${anns.map(a=>`<div onclick="navigate('meetings')" style="min-width:200px;flex-shrink:0;background:#fff;border-left:4px solid ${a.pinned?'#f59e0b':'#3b82f6'};border-radius:10px;padding:12px 14px;cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,0.15)">
+              <div style="font-size:12px;font-weight:900;color:#111;margin-bottom:4px">${a.pinned?'📌 ':'📢 '}${a.title}</div>
+              <div style="font-size:11px;color:#333;font-weight:600;line-height:1.5">${(a.body||'').substring(0,60)}${(a.body||'').length>60?'...':''}</div>
             </div>`).join('')}
           </div>
         </div>`:''}
@@ -1378,6 +1381,7 @@ async function renderDashboard(){
           <div class="statCard" onclick="navigate('loans')" style="cursor:pointer"><div class="sIcon">⚠️</div><div class="sVal" style="color:#fbbf24">${fmt(lDue)}</div><div class="sLabel">Loan Due</div></div>
           <div class="statCard" onclick="navigate('savings')" style="cursor:pointer"><div class="sIcon">🐷</div><div class="sVal" style="color:#34d399">${fmt(tSav)}</div><div class="sLabel">Total Savings</div></div>
           <div class="statCard" onclick="navigate('fines')" style="cursor:pointer"><div class="sIcon">🚨</div><div class="sVal" style="color:#f87171">${fmt(tFines)}</div><div class="sLabel">Pending Fines</div></div>
+          <div class="statCard" style="cursor:pointer;background:linear-gradient(135deg,rgba(99,102,241,0.1),rgba(139,92,246,0.05));border-color:rgba(99,102,241,0.3)"><div class="sIcon">💹</div><div class="sVal" style="color:#818cf8">${fmt(tInterest)}</div><div class="sLabel">Total Interest</div></div>
         </div>
         <div class="card">
           <div class="cardHead">Recent Transactions <span class="ch-badge">${recent.length} records</span></div>
@@ -1414,12 +1418,12 @@ async function renderDashboard(){
       c.innerHTML=`
         <div class="pageTitle"><span>📊</span>My Dashboard</div>
         ${lDue>0||fines>0?`<div class="dueAlert">⚠️ तपाईको ${fmt(lDue+fines)} ऋण तिर्न बाँकी छ।!</div>`:''}
-        ${anns.length>0?`<div onclick="navigate('meetings')" style="background:linear-gradient(135deg,rgba(245,158,11,0.08),rgba(34,197,94,0.04));border:1px solid rgba(245,158,11,0.2);border-radius:12px;padding:12px 16px;margin-bottom:14px;cursor:pointer">
-          <div style="font-size:10px;color:var(--gold);font-weight:700;margin-bottom:8px">📌 BULLETIN</div>
+        ${anns.length>0?`<div style="margin-bottom:14px">
+          <div style="font-size:11px;font-weight:800;color:#3b82f6;letter-spacing:1px;margin-bottom:8px;text-transform:uppercase">📌 Bulletin Board</div>
           <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:4px">
-            ${anns.map(a=>`<div style="min-width:190px;background:rgba(0,0,0,0.25);border-radius:10px;padding:10px;border:1px solid rgba(245,158,11,0.15);flex-shrink:0">
-              <div style="font-size:12px;font-weight:800;color:var(--gold)">${a.pinned?'📌 ':'📢 '}${a.title}</div>
-              <div style="font-size:11px;color:var(--text2);margin-top:4px">${(a.body||'').substring(0,55)}...</div>
+            ${anns.map(a=>`<div onclick="navigate('meetings')" style="min-width:200px;flex-shrink:0;background:#fff;border-left:4px solid ${a.pinned?'#f59e0b':'#3b82f6'};border-radius:10px;padding:12px 14px;cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,0.15)">
+              <div style="font-size:12px;font-weight:900;color:#111;margin-bottom:4px">${a.pinned?'📌 ':'📢 '}${a.title}</div>
+              <div style="font-size:11px;color:#333;font-weight:600;line-height:1.5">${(a.body||'').substring(0,60)}${(a.body||'').length>60?'...':''}</div>
             </div>`).join('')}
           </div>
         </div>`:''}
@@ -2069,7 +2073,7 @@ async function renderMembers(){
               ${(m.photo&&m.photo.length>10)?`<img class="mavatar" src="${m.photo}" onerror="this.style.display='none'"/>`:
                 `<div class="avatar" style="width:52px;height:52px;font-size:18px">${(m.name||'U').substring(0,2).toUpperCase()}</div>`}
               <div style="flex:1;min-width:0">
-                <div class="mname">${m.name||'—'} ${m.verified?'<span style="color:#4ade80">✅</span>':''}</div>
+                <div class="mname">${m.name||'—'} ${m.verified?'<span style="display:inline-flex;align-items:center;gap:3px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;letter-spacing:.3px;box-shadow:0 2px 8px rgba(16,185,129,0.4)">✓ Verified</span>':''}</div>
                 <div class="mmid">${m.memberId||'—'}</div>
                 <span class="tag ${m.status==='inactive'?'inactive':'active'}">${m.status||'active'}</span>
               </div>
@@ -2576,7 +2580,7 @@ async function renderProfile(){
         ${(d.photo&&d.photo.length>10)?`<img src="${d.photo}" style="width:80px;height:80px;border-radius:50%;border:3px solid var(--gold);object-fit:cover;box-shadow:0 0 20px rgba(245,158,11,0.3)"/>`:
           `<div class="avatar" style="width:80px;height:80px;font-size:28px">${(d.name||'U').substring(0,2).toUpperCase()}</div>`}
         <div style="flex:1">
-          <div style="font-size:22px;font-weight:900;color:var(--gold)">${d.name||'—'} ${d.verified?'✅':''}</div>
+          <div style="font-size:22px;font-weight:900;color:var(--gold)">${d.name||'—'} ${d.verified?'<span style="display:inline-flex;align-items:center;gap:3px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;letter-spacing:.3px;box-shadow:0 2px 8px rgba(16,185,129,0.4)">✓ Verified</span>':''}</div>
           <div style="font-size:13px;color:var(--text2);margin-top:4px">${d.email||'—'}</div>
           <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
             <span class="tag active">Member</span>
@@ -2652,7 +2656,7 @@ async function renderMembersHub(){
         ${m.photo&&m.photo.length>10?`<img class="mavatar" src="${m.photo}"/>`:
           `<div class="avatar" style="width:52px;height:52px;font-size:18px">${(m.name||'U').substring(0,2).toUpperCase()}</div>`}
         <div style="flex:1;min-width:0">
-          <div class="mname">${m.name||'—'} ${m.verified?'✅':''}</div>
+          <div class="mname">${m.name||'—'} ${m.verified?'<span style="display:inline-flex;align-items:center;gap:3px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;letter-spacing:.3px;box-shadow:0 2px 8px rgba(16,185,129,0.4)">✓ Verified</span>':''}</div>
           <div class="mmid">${m.memberId||'—'}</div>
           <span class="tag ${m.status==='inactive'?'inactive':'active'}">${m.status||'active'}</span>
         </div>
@@ -2778,7 +2782,7 @@ async function renderMemberProfile(){
           ${m.photo&&m.photo.length>10?`<img src="${m.photo}" style="width:65px;height:65px;border-radius:50%;border:3px solid var(--gold);object-fit:cover"/>`:
             `<div class="avatar" style="width:65px;height:65px;font-size:22px">${(m.name||'U').substring(0,2).toUpperCase()}</div>`}
           <div style="flex:1">
-            <div style="font-size:18px;font-weight:900;color:var(--gold)">${m.name||'—'} ${m.verified?'✅':''}</div>
+            <div style="font-size:18px;font-weight:900;color:var(--gold)">${m.name||'—'} ${m.verified?'<span style="display:inline-flex;align-items:center;gap:3px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;letter-spacing:.3px;box-shadow:0 2px 8px rgba(16,185,129,0.4)">✓ Verified</span>':''}</div>
             <div style="font-size:12px;color:var(--text2)">${m.email||'—'} | ${m.phone||'—'}</div>
             <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
               <span class="tag ${m.status==='inactive'?'inactive':'active'}">${m.status||'active'}</span>
