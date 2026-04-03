@@ -578,8 +578,7 @@ td{padding:11px 14px;color:var(--text);vertical-align:middle}
         <div class="topActions">
           <button class="iconBtn" onclick="openDateModal()" title="Date Converter">📅</button>
           <button class="iconBtn" onclick="toggleLang()" id="langBtn" title="Language">अ</button>
-          <button class="iconBtn" onclick="exportAllDataExcel()" title="Backup">📊</button>
-          <button class="iconBtn" id="darkBtn" onclick="toggleDark()" title="Theme">🌙</button>
+          <button class="iconBtn" onclick="exportAllDataExcel()" title="Backup" id="backupBtn" style="display:none">📊</button>
           <div style="position:relative">
             <button class="iconBtn" onclick="toggleNotif()" id="notifBtn">
               🔔<span class="badge" id="notifBadge" style="display:none">0</span>
@@ -899,9 +898,9 @@ function toggleLang(){
   localStorage.setItem('lang',isNepali?'np':'en');
   const btn=document.getElementById('langBtn');
   if(btn)btn.textContent=isNepali?'En':'अ';
-  // Re-render sidebar with new language
   setupSidebar();
-  navigate(currentPage);
+  // Re-render current page with new language
+  renderPage(currentPage);
 }
 function getLabel(en){return isNepali&&NP_LABELS[en]?NP_LABELS[en]:en;}
 
@@ -1101,6 +1100,9 @@ function setupTopbar(){
   const g=h<12?'Good Morning ☀️':h<17?'Good Afternoon 🌤️':'Good Evening 🌙';
   document.getElementById('greetMsg').textContent=g;
   document.getElementById('greetName').textContent=currentUserData?.name||'Welcome!';
+  // Show backup button only for admin
+  const bb=document.getElementById('backupBtn');
+  if(bb) bb.style.display=currentUserData?.role==='admin'?'inline-flex':'none';
   updateClock();
 }
 function navigate(page){
@@ -2554,13 +2556,26 @@ async function renderMySavings(){
 async function renderProfile(){
   const c=document.getElementById('mainContent');
   const d=currentUserData||{};
+  // Fetch data for credit score
+  const uid=currentUser.uid;
+  const [txSnap,fineSnap,loanSnap]=await Promise.all([
+    db.collection('transactions').where('memberId','==',uid).get().catch(()=>({docs:[]})),
+    db.collection('fines').where('memberId','==',uid).get().catch(()=>({docs:[]})),
+    db.collection('loans').where('memberId','==',uid).get().catch(()=>({docs:[]})),
+  ]);
+  const onTime=txSnap.docs.filter(d=>d.data().type==='income').length;
+  const late=fineSnap.docs.filter(d=>(d.data().reason||'').includes('Late')).length;
+  const pFines=fineSnap.docs.filter(d=>d.data().status==='pending').length;
+  const score=Math.min(100,Math.max(0,50+onTime*5-late*10-pFines*5));
+  const sc=score>=70?'#4ade80':score>=40?'#fbbf24':'#f87171';
+  const sLabel=score>=70?'Excellent':score>=40?'Good':'Poor';
   c.innerHTML=`
     <div class="pageTitle"><span>👤</span>My Profile</div>
     <div class="card" style="padding:24px">
       <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:24px">
         ${(d.photo&&d.photo.length>10)?`<img src="${d.photo}" style="width:80px;height:80px;border-radius:50%;border:3px solid var(--gold);object-fit:cover;box-shadow:0 0 20px rgba(245,158,11,0.3)"/>`:
           `<div class="avatar" style="width:80px;height:80px;font-size:28px">${(d.name||'U').substring(0,2).toUpperCase()}</div>`}
-        <div>
+        <div style="flex:1">
           <div style="font-size:22px;font-weight:900;color:var(--gold)">${d.name||'—'} ${d.verified?'✅':''}</div>
           <div style="font-size:13px;color:var(--text2);margin-top:4px">${d.email||'—'}</div>
           <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
@@ -2568,12 +2583,19 @@ async function renderProfile(){
             ${d.memberId?`<span class="tag loan">${d.memberId}</span>`:''}
           </div>
         </div>
+        <div style="text-align:center;background:var(--card2);border-radius:14px;padding:14px 18px;border:1px solid var(--border)">
+          <div style="font-size:32px;font-weight:900;color:${sc}">${score}</div>
+          <div style="font-size:9px;color:var(--text2);font-weight:700;letter-spacing:.8px">CREDIT SCORE</div>
+          <div style="font-size:11px;color:${sc};font-weight:700;margin-top:2px">${sLabel}</div>
+        </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;border-top:1px solid var(--border);padding-top:16px">
         <div><div style="font-size:10px;color:var(--text2);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Phone</div><div style="font-size:14px;font-weight:700;color:var(--text);margin-top:4px">${d.phone||'—'}</div></div>
         <div><div style="font-size:10px;color:var(--text2);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Joined (BS)</div><div style="font-size:14px;font-weight:700;color:var(--text);margin-top:4px">${d.joinDateNP||d.joinDate||'—'}</div></div>
         <div><div style="font-size:10px;color:var(--text2);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Status</div><div style="font-size:14px;font-weight:700;color:#4ade80;margin-top:4px">${d.status||'Active'}</div></div>
         <div><div style="font-size:10px;color:var(--text2);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Birthday</div><div style="font-size:14px;font-weight:700;color:var(--text);margin-top:4px">${d.birthday||'—'}</div></div>
+        <div><div style="font-size:10px;color:var(--text2);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Payments Made</div><div style="font-size:14px;font-weight:700;color:#4ade80;margin-top:4px">${onTime}</div></div>
+        <div><div style="font-size:10px;color:var(--text2);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Active Loans</div><div style="font-size:14px;font-weight:700;color:#f87171;margin-top:4px">${loanSnap.docs.filter(d=>d.data().status!=='paid').length}</div></div>
       </div>
     </div>
     <div class="card">
@@ -2955,13 +2977,13 @@ async function renderMeetingsHub(){
         <div class="formActions"><button class="btnSm" onclick="saveAn()">Post</button></div>
       </div>`:''}
       ${anns.length===0?'<div class="card"><div class="empty">कुनै सूचना छैन</div></div>':
-        anns.map(a=>`<div class="announcement${a.pinned?' pinned':''}">
-          <div style="display:flex;justify-content:space-between">
-            <div class="aTitle">${a.pinned?'📌 ':''}${a.title}</div>
+        anns.map(a=>`<div class="announcement${a.pinned?' pinned':''}" style="background:#fff;border:2px solid ${a.pinned?'#f59e0b':'#ddd'};border-radius:12px;padding:16px;margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div class="aTitle" style="color:#111;font-weight:900;font-size:15px">${a.pinned?'📌 ':'📢 '}${a.title}</div>
             ${isAdmin?`<button class="btnDanger" style="padding:3px 7px" onclick="delAn('${a.id}')">🗑</button>`:''}
           </div>
-          <div class="aBody">${a.body}</div>
-          <div class="aMeta">${a.author||'Admin'} • ${a.createdAt?.toDate?fmtTime(a.createdAt.toDate()):''}</div>
+          <div class="aBody" style="color:#222;font-weight:600;margin-top:8px;font-size:13px;line-height:1.7">${a.body}</div>
+          <div class="aMeta" style="color:#888;font-size:11px;margin-top:8px">${a.author||'Admin'} • ${a.createdAt?.toDate?fmtTime(a.createdAt.toDate()):''}</div>
         </div>`).join('')}`;
     window.saveAn=async()=>{
       const t=document.getElementById('ant').value.trim(),b=document.getElementById('anb').value.trim();
@@ -3011,18 +3033,6 @@ function renderSettings(){
       </div>
       <button class="btnSm" style="margin-top:10px" onclick="const n=document.getElementById('npSet').value,cc=document.getElementById('cpSet').value;if(!n||n.length<6){toast('6+ chars!','error');return;}if(n!==cc){toast('Match bhayena!','error');return;}currentUser.updatePassword(n).then(()=>toast('Password bhadiyo!')).catch(e=>toast(e.message,'error'))">Update</button>
     </div>
-    <div class="card" style="padding:16px;margin-bottom:12px">
-      <div style="font-weight:800;color:var(--gold);margin-bottom:10px">🏦 Nepal Bank Rates (अनुमानित)</div>
-      <div class="tableWrap"><table>
-        <thead><tr><th>Bank</th><th>Savings</th><th>FD</th><th>Loan</th></tr></thead>
-        <tbody>
-          <tr><td>Nepal Bank</td><td style="color:#34d399">5.5%</td><td style="color:#34d399">9-11%</td><td style="color:#f87171">11-14%</td></tr>
-          <tr><td>NIC Asia</td><td style="color:#34d399">6%</td><td style="color:#34d399">9-12%</td><td style="color:#f87171">12-15%</td></tr>
-          <tr><td>Nabil Bank</td><td style="color:#34d399">5.5%</td><td style="color:#34d399">9-11%</td><td style="color:#f87171">11-13%</td></tr>
-          <tr><td>Everest Bank</td><td style="color:#34d399">6%</td><td style="color:#34d399">9-12%</td><td style="color:#f87171">12-14%</td></tr>
-        </tbody>
-      </table></div>
-    </div>
     ${isAdmin?`<div class="card" style="padding:16px;margin-bottom:12px">
       <div style="font-weight:800;color:var(--gold);margin-bottom:10px">📊 Data Backup</div>
       <button class="btnSm btnGreen" onclick="exportAllDataExcel()">📊 Excel Download</button>
@@ -3044,10 +3054,19 @@ async function renderPayRequest(){
     <div class="formCard"><div class="cardHead" style="color:var(--gold)">Admin लाई अनुरोध पठाउनुहोस्</div>
       <div style="padding:16px">
         <div class="formGrid" style="padding:0">
-          <div class="field"><label>प्रकार</label><select id="prt"><option value="savings">🐷 बचत</option><option value="loan">🏦 ऋण तिर्ने</option><option value="fine">⚠️ जरिवाना</option><option value="fee">💰 शुल्क</option></select></div>
+          <div class="field"><label>प्रकार</label><select id="prt" onchange="window._prTypeChange()">
+            <option value="savings">🐷 बचत</option>
+            <option value="loan">🏦 ऋण तिर्ने</option>
+            <option value="interest">💹 ब्याज तिर्ने</option>
+            <option value="fine">⚠️ जरिवाना</option>
+            <option value="fee">💰 शुल्क</option>
+          </select></div>
           <div class="field"><label>रकम</label><input type="number" id="pra" placeholder="5000"/></div>
           <div class="field"><label>तरिका</label><select id="prm"><option>Cash</option><option>eSewa</option><option>Khalti</option><option>Bank Transfer</option></select></div>
           <div class="field"><label>मिति</label><input type="date" id="prd" value="${todayStr()}"/></div>
+          <div id="interestNote" style="display:none;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);border-radius:10px;padding:10px 14px;font-size:12px;color:#fbbf24;font-weight:600;grid-column:1/-1">
+            💹 <b>ब्याज मात्र</b> तिर्दै हुनुहुन्छ — यो Loan को Principle मा count हुँदैन, ब्याज मात्र हो।
+          </div>
           <div class="field" style="grid-column:1/-1"><label>नोट</label><textarea id="prn" rows="2" placeholder="विवरण..."></textarea></div>
         </div>
         <button class="btnSm" style="margin-top:12px" onclick="doPR()">📤 पठाउनुहोस्</button>
@@ -3055,14 +3074,21 @@ async function renderPayRequest(){
     </div>
     ${reqs.length>0?`<div class="card"><div class="tableWrap"><table>
       <thead><tr><th>प्रकार</th><th>रकम</th><th>मिति</th><th>Status</th></tr></thead>
-      <tbody>${reqs.map(r=>`<tr><td>${r.type||'—'}</td><td style="color:var(--gold);font-weight:700">${fmt(r.amount)}</td><td>${r.dateBS||r.date||'—'}</td><td><span class="tag ${r.status==='approved'?'approved':r.status==='rejected'?'rejected':'pending'}">${r.status||'pending'}</span></td></tr>`).join('')}
+      <tbody>${reqs.map(r=>`<tr><td>${r.type==='interest'?'💹 ब्याज':r.type||'—'}</td><td style="color:var(--gold);font-weight:700">${fmt(r.amount)}</td><td>${r.dateBS||r.date||'—'}</td><td><span class="tag ${r.status==='approved'?'approved':r.status==='rejected'?'rejected':'pending'}">${r.status||'pending'}</span></td></tr>`).join('')}
       </tbody></table></div></div>`:''}`;
+  window._prTypeChange=()=>{
+    const t=document.getElementById('prt')?.value;
+    const note=document.getElementById('interestNote');
+    if(note) note.style.display=t==='interest'?'block':'none';
+  };
   window.doPR=async()=>{
     const amt=Number(document.getElementById('pra').value);
     if(!amt||amt<=0){toast('रकम हाल्नुहोस्!','error');return;}
     const d=document.getElementById('prd').value,bs=NepaliDate.convert(new Date(d)).str;
-    await db.collection('payRequests').add({memberId:currentUser.uid,memberName:currentUserData?.name||'',type:document.getElementById('prt').value,amount:amt,method:document.getElementById('prm').value,date:d,dateBS:bs,note:document.getElementById('prn').value,status:'pending',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
-    await addNotif(`💸 ${currentUserData?.name} ले ${fmt(amt)} request गरे!`,'info','admin');
+    const type=document.getElementById('prt').value;
+    await db.collection('payRequests').add({memberId:currentUser.uid,memberName:currentUserData?.name||'',type,amount:amt,method:document.getElementById('prm').value,date:d,dateBS:bs,note:document.getElementById('prn').value,status:'pending',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    const typeLabel=type==='interest'?'💹 ब्याज':type==='savings'?'🐷 बचत':type==='loan'?'🏦 ऋण':type==='fine'?'⚠️ जरिवाना':'💰 शुल्क';
+    await addNotif(`💸 ${currentUserData?.name} ले ${typeLabel} ${fmt(amt)} request गरे!`,'info','admin');
     toast('अनुरोध पठाइयो!');renderPayRequest();
   };
 }
