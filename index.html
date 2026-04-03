@@ -1613,11 +1613,21 @@ async function renderLoans(){
   const c=document.getElementById('mainContent');
   const mSnap=await db.collection('users').where('role','==','member').get();
   const members=mSnap.docs.map(d=>({id:d.id,...d.data()}));
+  let _lTab=window._lTab||'loans';
   async function load(){
+    window._lTab=_lTab;
     const snap=await db.collection('loans').get().catch(()=>({docs:[]}));
     const loans=snap.docs.map(d=>({id:d.id,...d.data()}));
+    const lrSnap=await db.collection('loanRequests').get().catch(()=>({docs:[]}));
+    const lreqs=lrSnap.docs.map(d=>({id:d.id,...d.data()}));
+    const pending=lreqs.filter(r=>r.status==='pending').length;
     c.innerHTML=`
       <div class="pageTitle"><span>🏦</span>Loans</div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+        <button class="pill${_lTab==='loans'?' active':''}" onclick="window._lTab='loans';renderLoans()">🏦 Loans</button>
+        <button class="pill${_lTab==='requests'?' active':''}" onclick="window._lTab='requests';renderLoans()">📋 Requests${pending>0?` <span style="background:#ef4444;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;margin-left:4px">${pending}</span>`:''}</button>
+      </div>
+      ${_lTab==='loans'?`
       <div class="formCard">
         <div class="cardHead">+ New Loan</div>
         <div class="formGrid">
@@ -1633,6 +1643,8 @@ async function renderLoans(){
       <div class="memberGrid">
         ${loans.length===0?'<div class="empty">कुनै पनि loan छैन</div>':loans.map(l=>{
           const pct=l.amount>0?Math.min(100,Math.round(((l.amount-(l.remaining??l.amount))/l.amount)*100)):0;
+          const issueDateBS=l.issueDate?NepaliDate.convert(new Date(l.issueDate)).str:'—';
+          const dueDateBS=l.dueDate?NepaliDate.convert(new Date(l.dueDate)).str:'—';
           return`<div class="loanCard">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
               <div><div style="font-weight:800;font-size:14px;color:var(--text)">${l.memberName||'—'}</div>
@@ -1645,16 +1657,37 @@ async function renderLoans(){
               <div><div class="sLabel">Loan</div><div class="lval">${fmt(l.amount)}</div></div>
               <div><div class="sLabel">Remaining</div><div class="lval" style="color:#f87171">${fmt(l.remaining??l.amount)}</div></div>
               <div><div class="sLabel">Interest</div><div class="lval">${l.rate||0}%/mo</div></div>
-              <div><div class="sLabel">Due Date</div><div class="lval">${l.dueDate||'—'}</div></div>
+              <div><div class="sLabel">Issue (BS)</div><div class="lval">${issueDateBS}</div></div>
+              <div><div class="sLabel">Due (BS)</div><div class="lval">${dueDateBS}</div></div>
             </div>
-            <div style="display:flex;gap:8px;margin-top:12px">
+            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
               <button class="btnSm" style="font-size:11px;padding:6px 12px" onclick="repayLoan('${l.id}','${l.memberName||''}',${l.remaining??l.amount},'${l.memberId||''}',${l.rate||0})">💳 Repayment</button>
               <button class="btnGhost" style="font-size:11px;padding:6px 12px" onclick="viewLoanHistory('${l.id}','${l.memberName||''}')">📋 History</button>
               <button class="btnSm btnGreen" style="font-size:11px;padding:6px 12px" onclick="printLoan(${JSON.stringify(l).replace(/'/g,'')})">🖨️ Print</button>
               <button class="btnDanger" onclick="delLoan('${l.id}')">🗑</button>
             </div>
           </div>`;}).join('')}
-      </div>`;
+      </div>`:`
+      <div class="card">
+        <div class="cardHead">📋 Loan Requests <span class="ch-badge">${lreqs.length} total</span></div>
+        <div class="tableWrap"><table>
+          <thead><tr><th>Member</th><th>Amount</th><th>Duration</th><th>Reason</th><th>Date</th><th>Status</th><th>Action</th></tr></thead>
+          <tbody>${lreqs.length===0?`<tr><td colspan="7" class="empty">कुनै request छैन</td></tr>`:
+            lreqs.sort((a,b)=>(b.date||'')>(a.date||'')?1:-1).map(r=>`<tr>
+              <td style="font-weight:700">${r.memberName||'—'}</td>
+              <td style="color:var(--gold);font-weight:800">${fmt(r.amount)}</td>
+              <td>${r.duration||'—'}</td>
+              <td style="max-width:150px;font-size:12px">${(r.reason||'—').substring(0,60)}${(r.reason||'').length>60?'...':''}</td>
+              <td>${r.dateBS||r.date||'—'}</td>
+              <td><span class="tag ${r.status==='approved'?'approved':r.status==='rejected'?'rejected':'pending'}">${r.status||'pending'}</span></td>
+              <td>${r.status==='pending'?`<div style="display:flex;gap:4px">
+                <button class="btnSm" style="padding:4px 10px;font-size:11px" onclick="approveLR('${r.id}','${r.memberId}','${r.memberName}',${r.amount})">✓</button>
+                <button class="btnDanger" style="padding:4px 8px" onclick="rejectLR('${r.id}','${r.memberId}')">✗</button>
+              </div>`:'—'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>
+      </div>`}`;
   }
   load();
   window.saveLoan=async()=>{
@@ -1706,6 +1739,8 @@ async function renderLoans(){
   window.delLoan=async id=>{if(!confirm('Delete?'))return;await db.collection('loans').doc(id).delete();toast('Deleted!','error');load();};
   window.printLoan=async(loan)=>{
     const printWin=window.open('','_blank');
+    const issueDateBS=loan.issueDate?NepaliDate.convert(new Date(loan.issueDate)).str:'—';
+    const dueDateBS=loan.dueDate?NepaliDate.convert(new Date(loan.dueDate)).str:'—';
     printWin.document.write(`<!DOCTYPE html><html><head>
       <title>Loan Document - ${loan.memberName||''}</title>
       <style>body{font-family:Arial,sans-serif;padding:40px;max-width:600px;margin:0 auto}
@@ -1724,23 +1759,33 @@ async function renderLoans(){
       <button onclick="window.print()" style="display:block;margin:10px auto;padding:10px 20px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer">🖨️ Print Now</button>
       <table>
         <tr><td>Member Name</td><td>${loan.memberName||'—'}</td></tr>
-        <tr><td>Member ID</td><td>${loan.memberId||'—'}</td></tr>
         <tr><td>Loan Amount</td><td>${fmt(loan.amount)}</td></tr>
         <tr><td>Remaining</td><td>${fmt(loan.remaining??loan.amount)}</td></tr>
         <tr><td>Interest Rate</td><td>${loan.rate||0}% per month</td></tr>
-        <tr><td>Issue Date</td><td>${loan.issueDate||'—'}</td></tr>
-        <tr><td>Due Date</td><td>${loan.dueDate||'—'}</td></tr>
+        <tr><td>Issue Date (BS)</td><td>${issueDateBS}</td></tr>
+        <tr><td>Due Date (BS)</td><td>${dueDateBS}</td></tr>
         <tr><td>Purpose</td><td>${loan.note||'—'}</td></tr>
         <tr><td>Status</td><td>${loan.status||'active'}</td></tr>
       </table>
-      <div class="sign">
-        <div>Member Signature</div>
-        <div>Admin Signature</div>
-      </div>
-      <div class="footer">Generated: ${NepaliDate.convert(new Date()).str} | Daju-Bhai Samuha - ESTD 2025 | Dhanjugaon, Bhaktapur</div>
+      <div class="sign"><div>Member Signature</div><div>Admin Signature</div></div>
+      <div class="footer">Generated: ${NepaliDate.convert(new Date()).str} | Daju-Bhai Samuha | Dhanjugaon, Bhaktapur</div>
     </body></html>`);
     printWin.document.close();
     toast('Print window opened!');
+  };
+  window.approveLR=async(id,memberId,memberName,amount)=>{
+    const rate=Number(prompt(`${memberName} ko loan approve garnus.\nInterest rate (%/month)?`)||0);
+    const dueDate=prompt('Due date (YYYY-MM-DD)?')||'';
+    await db.collection('loanRequests').doc(id).update({status:'approved'});
+    await db.collection('loans').add({memberId,memberName,amount,remaining:amount,rate,issueDate:todayStr(),dueDate,note:'Loan request approved',status:'active',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    await addNotif(`🎉 ${memberName} ko ${fmt(amount)} loan approve bhayo!`,'success',memberId);
+    toast('Approved!');load();
+  };
+  window.rejectLR=async(id,memberId)=>{
+    const reason=prompt('Rejection reason?')||'';
+    await db.collection('loanRequests').doc(id).update({status:'rejected',rejectionReason:reason});
+    await addNotif(`❌ Tapaiko loan request reject bhayo.${reason?' Reason: '+reason:''}`,'error',memberId);
+    toast('Rejected!','error');load();
   };
 }
 
@@ -1989,60 +2034,72 @@ async function renderFines(){
   window.delFine=async id=>{if(!confirm('Delete?'))return;await db.collection('fines').doc(id).delete();toast('Deleted!','error');load();};
 }
 
-// ====== BANK INTEREST ======
+// ====== LOAN INTEREST COLLECTED ======
 async function renderInterest(){
   const c=document.getElementById('mainContent');
   async function load(){
-    const snap=await db.collection('interest').orderBy('createdAt','desc').get().catch(()=>({docs:[]}));
-    const recs=snap.docs.map(d=>({id:d.id,...d.data()}));
-    const tot=recs.reduce((a,r)=>a+(r.interest||0),0);
+    const [lSnap,pmSnap]=await Promise.all([
+      db.collection('loans').get().catch(()=>({docs:[]})),
+      db.collection('loans').get().catch(()=>({docs:[]})),
+    ]);
+    // Get all payment subcollections
+    const loans=lSnap.docs.map(d=>({id:d.id,...d.data()}));
+    // Fetch all payments for all loans
+    const allPayments=[];
+    await Promise.all(loans.map(async l=>{
+      const ps=await db.collection('loans').doc(l.id).collection('payments').get().catch(()=>({docs:[]}));
+      ps.docs.forEach(p=>allPayments.push({...p.data(),loanId:l.id,memberName:l.memberName,memberId:l.memberId}));
+    }));
+    const totalInterest=allPayments.reduce((a,p)=>a+(p.interest||0),0);
+    const totalPrincipal=allPayments.reduce((a,p)=>a+(p.principal||0),0);
+    // Group by member
+    const byMember={};
+    allPayments.forEach(p=>{
+      const k=p.memberId||p.memberName||'—';
+      if(!byMember[k]) byMember[k]={name:p.memberName||'—',interest:0,principal:0,payments:0};
+      byMember[k].interest+=(p.interest||0);
+      byMember[k].principal+=(p.principal||0);
+      byMember[k].payments++;
+    });
     c.innerHTML=`
-      <div class="pageTitle"><span>🏛️</span>Bank Interest</div>
-      <div class="statsGrid" style="grid-template-columns:repeat(2,1fr);max-width:320px">
-        <div class="statCard"><div class="sIcon">🏛️</div><div class="sVal" style="color:#4ade80">${fmt(tot)}</div><div class="sLabel">Total Earned</div></div>
-        <div class="statCard"><div class="sIcon">📋</div><div class="sVal">${recs.length}</div><div class="sLabel">Records</div></div>
+      <div class="pageTitle"><span>💹</span>Loan Interest Collected</div>
+      <div class="statsGrid" style="grid-template-columns:repeat(3,1fr);max-width:480px;margin-bottom:16px">
+        <div class="statCard"><div class="sIcon">💹</div><div class="sVal" style="color:#818cf8;font-size:16px">${fmt(totalInterest)}</div><div class="sLabel">Total Interest</div></div>
+        <div class="statCard"><div class="sIcon">🏦</div><div class="sVal" style="color:#34d399;font-size:16px">${fmt(totalPrincipal)}</div><div class="sLabel">Principal Repaid</div></div>
+        <div class="statCard"><div class="sIcon">📋</div><div class="sVal" style="font-size:16px">${allPayments.length}</div><div class="sLabel">Payments</div></div>
       </div>
-      <div class="formCard">
-        <div class="cardHead">+ Add Bank Interest</div>
-        <div class="formGrid">
-          <div class="field"><label>Bank Name</label><input type="text" id="iBank" placeholder="NIC Asia Bank"/></div>
-          <div class="field"><label>Principal (Rs.)</label><input type="number" id="iPrincipal" placeholder="100000"/></div>
-          <div class="field"><label>Rate (%/year)</label><input type="number" id="iRate" placeholder="7" step="0.1"/></div>
-          <div class="field"><label>Interest Amount (Rs.)</label><input type="number" id="iAmt" placeholder="7000"/></div>
-          <div class="field"><label>Date</label><input type="date" id="iDate" value="${todayStr()}"/></div>
-          <div class="field"><label>Note</label><input type="text" id="iNote" placeholder="Q1 interest..."/></div>
-        </div>
-        <div class="formActions"><button class="btnSm" onclick="saveInterest()">Save</button></div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="cardHead">Member-wise Interest</div>
+        <div class="tableWrap"><table>
+          <thead><tr><th>Member</th><th>Interest Paid</th><th>Principal Paid</th><th>Payments</th></tr></thead>
+          <tbody>${Object.values(byMember).length===0?`<tr><td colspan="4" class="empty">कुनै repayment छैन</td></tr>`:
+            Object.values(byMember).sort((a,b)=>b.interest-a.interest).map(m=>`<tr>
+              <td style="font-weight:700">${m.name}</td>
+              <td style="color:#818cf8;font-weight:800">${fmt(m.interest)}</td>
+              <td style="color:#34d399;font-weight:700">${fmt(m.principal)}</td>
+              <td>${m.payments}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>
       </div>
-      <div class="card"><div class="tableWrap"><table>
-        <thead><tr><th>Bank</th><th>Principal</th><th>Rate</th><th>Interest</th><th>Date (BS)</th><th>Del</th></tr></thead>
-        <tbody>${recs.length===0?`<tr><td colspan="6" class="empty">कुनै पनि record छैन</td></tr>`:
-          recs.map(r=>`<tr>
-            <td>${r.bank||'—'}</td><td>${fmt(r.principal||0)}</td>
-            <td>${r.rate||0}%</td>
-            <td style="font-weight:800;color:#4ade80">${fmt(r.interest||0)}</td>
-            <td>${r.dateBS||NepaliDate.convert(new Date(r.date||Date.now())).str}</td>
-            <td><button class="btnDanger" style="padding:4px 8px" onclick="delInterest('${r.id}')">🗑</button></td>
-          </tr>`).join('')}
-        </tbody>
-      </table></div></div>`;
+      <div class="card">
+        <div class="cardHead">All Payments Detail</div>
+        <div class="tableWrap"><table>
+          <thead><tr><th>Member</th><th>Date (BS)</th><th>Total Paid</th><th>Principal</th><th>Interest</th><th>Remaining</th></tr></thead>
+          <tbody>${allPayments.length===0?`<tr><td colspan="6" class="empty">कुनै payment छैन</td></tr>`:
+            allPayments.sort((a,b)=>(b.date||'')>(a.date||'')?1:-1).map(p=>`<tr>
+              <td style="font-weight:700">${p.memberName||'—'}</td>
+              <td>${p.dateBS||p.date||'—'}</td>
+              <td style="font-weight:800;color:#4ade80">${fmt((p.principal||0)+(p.interest||0))}</td>
+              <td>${fmt(p.principal||0)}</td>
+              <td style="color:#818cf8;font-weight:700">${fmt(p.interest||0)}</td>
+              <td style="color:#f87171">${fmt(p.remaining||0)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>
+      </div>`;
   }
   load();
-  window.saveInterest=async()=>{
-    const bank=document.getElementById('iBank').value.trim();
-    const principal=Number(document.getElementById('iPrincipal').value);
-    const rate=Number(document.getElementById('iRate').value||0);
-    const amt=Number(document.getElementById('iAmt').value);
-    const date=document.getElementById('iDate').value;
-    const note=document.getElementById('iNote').value;
-    if(!bank||!amt){toast('Bank name ra amount haalnuhos!','error');return;}
-    const dateBS=NepaliDate.convert(new Date(date)).str;
-    await db.collection('interest').add({bank,principal,rate,interest:amt,date,dateBS,note,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
-    await db.collection('transactions').add({type:'income',category:'Bank Interest',amount:amt,date,dateBS,memberName:'—',method:'Bank Transfer',note:`${bank} interest`,by:currentUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
-    await addNotif(`🏛️ Bank interest received: ${fmt(amt)} from ${bank}`,'success','all');
-    toast('Interest add bhayo!');load();
-  };
-  window.delInterest=async id=>{if(!confirm('Delete?'))return;await db.collection('interest').doc(id).delete();toast('Deleted!','error');load();};
 }
 
 // ====== MEMBERS ======
@@ -2517,6 +2574,8 @@ async function renderMyLoans(){
     <div class="memberGrid">
       ${loans.length===0?'<div class="empty">कुनै पनिloan छैन 🎉</div>':loans.map(l=>{
         const pct=l.amount>0?Math.min(100,Math.round(((l.amount-(l.remaining??l.amount))/l.amount)*100)):0;
+        const issueDateBS=l.issueDate?NepaliDate.convert(new Date(l.issueDate)).str:'—';
+        const dueDateBS=l.dueDate?NepaliDate.convert(new Date(l.dueDate)).str:'—';
         return`<div class="loanCard">
           <div style="display:flex;justify-content:space-between;margin-bottom:8px">
             <div style="font-weight:800;color:var(--gold)">${fmt(l.amount)} Loan</div>
@@ -2528,7 +2587,8 @@ async function renderMyLoans(){
             <div><div class="sLabel">Original</div><div class="lval">${fmt(l.amount)}</div></div>
             <div><div class="sLabel">Remaining</div><div class="lval" style="color:#f87171">${fmt(l.remaining??l.amount)}</div></div>
             <div><div class="sLabel">Interest</div><div class="lval">${l.rate||0}%/mo</div></div>
-            <div><div class="sLabel">Due</div><div class="lval">${l.dueDate||'—'}</div></div>
+            <div><div class="sLabel">Issue (BS)</div><div class="lval">${issueDateBS}</div></div>
+            <div><div class="sLabel">Due (BS)</div><div class="lval" style="color:#fbbf24">${dueDateBS}</div></div>
           </div>
         </div>`;}).join('')}
     </div>`;
@@ -2571,12 +2631,52 @@ async function renderProfile(){
     db.collection('loans').where('memberId','==',uid).get().catch(()=>({docs:[]})),
   ]);
   const onTime=txSnap.docs.filter(d=>d.data().type==='income').length;
-  const late=fineSnap.docs.filter(d=>(d.data().reason||'').includes('Late')).length;
-  const pFines=fineSnap.docs.filter(d=>d.data().status==='pending').length;
-  const score=Math.min(850,Math.max(300,300+onTime*25-late*40-pFines*15));
-  const scPct=Math.round((score-300)/550*100);
-  const sc=score>=700?'#10b981':score>=550?'#f59e0b':'#ef4444';
-  const sLabel=score>=700?'Excellent':score>=600?'Good':score>=500?'Fair':'Poor';
+  const lateLoanFines=fineSnap.docs.filter(d=>(d.data().reason||'').toLowerCase().includes('late')||d.data().category==='loan').length;
+  const pendingFines=fineSnap.docs.filter(d=>d.data().status==='pending').length;
+  const overdueLoans=loanSnap.docs.filter(d=>d.data().status!=='paid'&&d.data().dueDate&&new Date(d.data().dueDate)<new Date()).length;
+  const savingsCount=txSnap.docs.filter(d=>d.data().category==='Savings'||d.data().category==='savings').length;
+  // Start 100, deduct for bad behaviour, small bonus for good
+  const penalty=lateLoanFines*8+pendingFines*5+overdueLoans*12;
+  const bonus=Math.min(5,Math.floor(savingsCount/2));
+  const score=Math.min(100,Math.max(0,100-penalty+bonus));
+  const sc=score>=80?'#10b981':score>=60?'#f59e0b':'#ef4444';
+  const sLabel=score>=80?'Excellent':score>=60?'Good':score>=40?'Fair':'Poor';
+  // SVG gauge — semicircle like old weight machine
+  const gaugeHTML=(s,color,label)=>{
+    const pct=s/100;
+    // needle angle: 0 score = -90deg (left), 100 score = +90deg (right), mid=top
+    const needleDeg=-90+(pct*180);
+    const needleRad=needleDeg*Math.PI/180;
+    const nx=80+52*Math.sin(needleRad);
+    const ny=72-52*Math.cos(needleRad);
+    return `<div style="text-align:center">
+      <svg viewBox="0 0 160 85" xmlns="http://www.w3.org/2000/svg" style="width:180px;height:96px">
+        <!-- Background arc segments -->
+        <path d="M 18,72 A 62,62 0 0,1 80,10" fill="none" stroke="#ef4444" stroke-width="10" stroke-linecap="round" opacity="0.85"/>
+        <path d="M 80,10 A 62,62 0 0,1 118,25" fill="none" stroke="#f59e0b" stroke-width="10" stroke-linecap="round" opacity="0.85"/>
+        <path d="M 118,25 A 62,62 0 0,1 142,72" fill="none" stroke="#10b981" stroke-width="10" stroke-linecap="round" opacity="0.85"/>
+        <!-- Track underlay -->
+        <path d="M 18,72 A 62,62 0 0,1 142,72" fill="none" stroke="#ffffff18" stroke-width="10" stroke-linecap="round"/>
+        <!-- Tick marks -->
+        ${[0,10,20,30,40,50,60,70,80,90,100].map(v=>{
+          const a=(-90+(v/100*180))*Math.PI/180;
+          const inner=55,outer=v%50===0?47:51;
+          return`<line x1="${80+inner*Math.sin(a)}" y1="${72-inner*Math.cos(a)}" x2="${80+outer*Math.sin(a)}" y2="${72-outer*Math.cos(a)}" stroke="#ffffff44" stroke-width="${v%50===0?2:1}"/>`;
+        }).join('')}
+        <!-- Labels -->
+        <text x="10" y="82" fill="#888" font-size="9" text-anchor="middle">0</text>
+        <text x="80" y="6" fill="#888" font-size="9" text-anchor="middle">50</text>
+        <text x="150" y="82" fill="#888" font-size="9" text-anchor="middle">100</text>
+        <!-- Needle -->
+        <line x1="80" y1="72" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="80" cy="72" r="5" fill="${color}" stroke="#1a1a1a" stroke-width="1.5"/>
+        <!-- Center display -->
+        <text x="80" y="68" fill="${color}" font-size="18" font-weight="900" text-anchor="middle" dominant-baseline="auto">${s}</text>
+      </svg>
+      <div style="font-size:12px;font-weight:800;color:${color};margin-top:-4px">${label}</div>
+      <div style="font-size:10px;color:var(--text2);margin-top:2px">Credit Score /100</div>
+    </div>`;
+  };
   c.innerHTML=`
     <div class="pageTitle"><span>👤</span>My Profile</div>
     <div class="card" style="padding:24px">
@@ -2592,15 +2692,7 @@ async function renderProfile(){
           </div>
         </div>
         <div style="min-width:140px;background:var(--card2);border-radius:14px;padding:14px 16px;border:1px solid var(--border)">
-          <div style="font-size:10px;color:var(--text2);font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-bottom:6px">Credit Score</div>
-          <div style="display:flex;align-items:baseline;gap:4px;margin-bottom:6px">
-            <span style="font-size:28px;font-weight:900;color:${sc}">${score}</span>
-            <span style="font-size:10px;color:var(--text2)">/850</span>
-          </div>
-          <div style="background:var(--border);border-radius:6px;height:6px;overflow:hidden;margin-bottom:6px">
-            <div style="width:${scPct}%;height:6px;border-radius:6px;background:linear-gradient(90deg,#ef4444,#f59e0b,#10b981);transition:width .8s"></div>
-          </div>
-          <div style="font-size:11px;font-weight:800;color:${sc}">${sLabel}</div>
+          ${gaugeHTML(score,sc,sLabel)}
         </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;border-top:1px solid var(--border);padding-top:16px">
@@ -2777,11 +2869,43 @@ async function renderMemberProfile(){
     const tSav=savs.reduce((a,s)=>a+(s.amount||0),0);
     const pF=fines.filter(f=>f.status==='pending').reduce((a,f)=>a+(f.amount||0),0);
     const onTime=txs.filter(t=>t.type==='income').length;
-    const late=fines.filter(f=>(f.reason||'').includes('Late')).length;
-    const score=Math.min(850,Math.max(300,300+onTime*25-late*40));
-    const scPct=Math.round((score-300)/550*100);
-    const sc=score>=700?'#10b981':score>=550?'#f59e0b':'#ef4444';
-    const sLabel=score>=700?'Excellent':score>=600?'Good':score>=500?'Fair':'Poor';
+    const lateLoanFines=fines.filter(f=>(f.reason||'').toLowerCase().includes('late')||f.category==='loan').length;
+    const pendingFines=fines.filter(f=>f.status==='pending').length;
+    const overdueLoans=loans.filter(l=>l.status!=='paid'&&l.dueDate&&new Date(l.dueDate)<new Date()).length;
+    const savingsCount=txs.filter(t=>t.category==='Savings'||t.category==='savings').length;
+    const penalty=lateLoanFines*8+pendingFines*5+overdueLoans*12;
+    const bonus=Math.min(5,Math.floor(savingsCount/2));
+    const score=Math.min(100,Math.max(0,100-penalty+bonus));
+    const sc=score>=80?'#10b981':score>=60?'#f59e0b':'#ef4444';
+    const sLabel=score>=80?'Excellent':score>=60?'Good':score>=40?'Fair':'Poor';
+    const gaugeHTML=(s,color,label)=>{
+      const pct=s/100;
+      const needleDeg=-90+(pct*180);
+      const needleRad=needleDeg*Math.PI/180;
+      const nx=80+52*Math.sin(needleRad);
+      const ny=72-52*Math.cos(needleRad);
+      return `<div style="text-align:center">
+        <svg viewBox="0 0 160 85" xmlns="http://www.w3.org/2000/svg" style="width:180px;height:96px">
+          <path d="M 18,72 A 62,62 0 0,1 80,10" fill="none" stroke="#ef4444" stroke-width="10" stroke-linecap="round" opacity="0.85"/>
+          <path d="M 80,10 A 62,62 0 0,1 118,25" fill="none" stroke="#f59e0b" stroke-width="10" stroke-linecap="round" opacity="0.85"/>
+          <path d="M 118,25 A 62,62 0 0,1 142,72" fill="none" stroke="#10b981" stroke-width="10" stroke-linecap="round" opacity="0.85"/>
+          <path d="M 18,72 A 62,62 0 0,1 142,72" fill="none" stroke="#ffffff18" stroke-width="10" stroke-linecap="round"/>
+          ${[0,10,20,30,40,50,60,70,80,90,100].map(v=>{
+            const a=(-90+(v/100*180))*Math.PI/180;
+            const inner=55,outer=v%50===0?47:51;
+            return`<line x1="${80+inner*Math.sin(a)}" y1="${72-inner*Math.cos(a)}" x2="${80+outer*Math.sin(a)}" y2="${72-outer*Math.cos(a)}" stroke="#ffffff44" stroke-width="${v%50===0?2:1}"/>`;
+          }).join('')}
+          <text x="10" y="82" fill="#888" font-size="9" text-anchor="middle">0</text>
+          <text x="80" y="6" fill="#888" font-size="9" text-anchor="middle">50</text>
+          <text x="150" y="82" fill="#888" font-size="9" text-anchor="middle">100</text>
+          <line x1="80" y1="72" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="80" cy="72" r="5" fill="${color}" stroke="#1a1a1a" stroke-width="1.5"/>
+          <text x="80" y="68" fill="${color}" font-size="18" font-weight="900" text-anchor="middle" dominant-baseline="auto">${s}</text>
+        </svg>
+        <div style="font-size:12px;font-weight:800;color:${color};margin-top:-4px">${label}</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">Credit Score /100</div>
+      </div>`;
+    };
     c.innerHTML=`
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
         <button class="btnGhost" onclick="navigate('members')" style="padding:7px 12px;font-size:12px">← Back</button>
@@ -2801,16 +2925,8 @@ async function renderMemberProfile(){
               ${m.memberId?`<span class="tag loan">${m.memberId}</span>`:''}
             </div>
           </div>
-          <div style="min-width:140px;background:var(--card2);border-radius:14px;padding:14px 16px;border:1px solid var(--border)">
-            <div style="font-size:10px;color:var(--text2);font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-bottom:6px">Credit Score</div>
-            <div style="display:flex;align-items:baseline;gap:4px;margin-bottom:6px">
-              <span style="font-size:28px;font-weight:900;color:${sc}">${score}</span>
-              <span style="font-size:10px;color:var(--text2)">/850</span>
-            </div>
-            <div style="background:var(--border);border-radius:6px;height:6px;overflow:hidden;margin-bottom:6px">
-              <div style="width:${scPct}%;height:6px;border-radius:6px;background:linear-gradient(90deg,#ef4444,#f59e0b,#10b981);transition:width .8s"></div>
-            </div>
-            <div style="font-size:11px;font-weight:800;color:${sc}">${sLabel}</div>
+          <div style="background:var(--card2);border-radius:14px;padding:12px;border:1px solid var(--border)">
+            ${gaugeHTML(score,sc,sLabel)}
           </div>
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:12px;border-top:1px solid var(--border);padding-top:10px;font-size:12px">
