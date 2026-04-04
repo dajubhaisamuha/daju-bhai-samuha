@@ -768,11 +768,12 @@ function fmtTime(d){if(!d)return '';return d.toLocaleString('en-NP',{month:'shor
 
 // Real-time clock
 function updateClock(){
-  try{const now=new Date(),np=NepaliDate.convert(now),el=document.getElementById('nepaliDateTop');
-  if(el)el.textContent=(np.str||'--')+' • '+(np.day||'--')+' • '+String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');}
-  catch(e){}
+  try{
+    const now=new Date(),np=NepaliDate.convert(now),el=document.getElementById('nepaliDateTop');
+    if(el) el.textContent=(np.str||'--')+' • '+(np.day||'--')+' • '+String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+  }catch(e){}
 }
-setInterval(updateClock,30000);updateClock();(updateClock, 1000);
+setInterval(updateClock,30000);updateClock();updateClock();(updateClock, 1000);
 updateClock();
 
 // Date modal
@@ -1055,27 +1056,28 @@ async function doResetPassword(){
 // ====== SIDEBAR ======
 const adminLinks=[
   {id:'dashboard',icon:'📊',label:'Dashboard'},
-  {id:'transactions',icon:'💳',label:'Transactions'},
-  {id:'loans',icon:'🏦',label:'Loans'},
-  {id:'savings',icon:'🐷',label:'Savings'},
-  {id:'fines',icon:'⚠️',label:'Fines & Dues'},
-  {id:'members',icon:'👥',label:'Members'},
-  {id:'meetings',icon:'📅',label:'Meetings'},
-  {id:'reports',icon:'📈',label:'Reports'},
-  {id:'notifications',icon:'🔔',label:'Notifications',badge:'notifSideBadge'},
-  {id:'loginlogs',icon:'🕐',label:'Login Logs'},
+  {id:'transactions',icon:'💳',label:'कारोबार'},
+  {id:'loans',icon:'🏦',label:'ऋण'},
+  {id:'savings',icon:'🐷',label:'बचत'},
+  {id:'fines',icon:'⚠️',label:'जरिवाना'},
+  {id:'members',icon:'👥',label:'सदस्यहरू'},
+  {id:'meetings',icon:'📅',label:'बैठक / सूचना'},
+  {id:'reports',icon:'📈',label:'रिपोर्ट'},
+  {id:'annualreport',icon:'📊',label:'वार्षिक रिपोर्ट'},
+  {id:'notifications',icon:'🔔',label:'सूचनाहरू',badge:'notifSideBadge'},
+  {id:'loginlogs',icon:'🕐',label:'Login Log'},
   {id:'settings',icon:'⚙️',label:'Settings'},
 ];
 const memberLinks=[
   {id:'dashboard',icon:'📊',label:'Dashboard'},
-  {id:'myfees',icon:'💰',label:'My Fees'},
-  {id:'myloans',icon:'🏦',label:'My Loans'},
-  {id:'mysavings',icon:'🐷',label:'My Savings'},
-  {id:'loanrequest',icon:'📝',label:'Loan Request'},
-  {id:'payrequest',icon:'💸',label:'Pay Request'},
-  {id:'meetings',icon:'📅',label:'Meetings'},
-  {id:'notifications',icon:'🔔',label:'Notifications',badge:'notifSideBadge'},
-  {id:'profile',icon:'👤',label:'My Profile'},
+  {id:'myfees',icon:'💰',label:'मेरो शुल्क'},
+  {id:'myloans',icon:'🏦',label:'मेरो ऋण'},
+  {id:'mysavings',icon:'🐷',label:'मेरो बचत'},
+  {id:'loanrequest',icon:'📝',label:'ऋण अनुरोध'},
+  {id:'payrequest',icon:'💸',label:'भुक्तानी अनुरोध'},
+  {id:'meetings',icon:'📅',label:'बैठक / सूचना'},
+  {id:'notifications',icon:'🔔',label:'सूचनाहरू',badge:'notifSideBadge'},
+  {id:'profile',icon:'👤',label:'मेरो Profile'},
   {id:'settings',icon:'⚙️',label:'Settings'},
 ];
 
@@ -1298,6 +1300,7 @@ function renderPage(page){
     loanrequests:()=>isAdmin?renderLoanRequests():navigate('dashboard'),
     loanrequest:()=>!isAdmin?renderLoanRequestForm():navigate('dashboard'),
     loginlogs:()=>isAdmin?renderLoginLogs():navigate('dashboard'),
+    annualreport:()=>isAdmin?renderAnnualReport():navigate('dashboard'),
     settings:renderSettings,
     myfees:renderMyFees,
     myloans:renderMyLoans,
@@ -2538,7 +2541,7 @@ async function renderMyFees(){
   const pFines=fines.filter(f=>f.status==='pending').reduce((a,f)=>a+f.amount,0);
   c.innerHTML=`
     <div class="pageTitle"><span>💰</span>My Fees & Payments</div>
-    ${pFines>0?`<div class="dueAlert">⚠️ तपाईको  ${fmt(pFines)} fine tirna baki cha!</div>`:''}
+    ${pFines>0?`<div class="dueAlert">⚠️ तपाईको ${fmt(pFines)} जरिवाना तिर्न बाँकी छ!</div>`:''}
     <div class="statsGrid">
       <div class="statCard"><div class="sIcon">✅</div><div class="sVal" style="color:#4ade80">${fmt(paid)}</div><div class="sLabel">Total Paid</div></div>
       <div class="statCard"><div class="sIcon">⚠️</div><div class="sVal" style="color:#f87171">${fmt(pFines)}</div><div class="sLabel">Pending Fines</div></div>
@@ -2607,7 +2610,7 @@ async function renderMyLoans(){
   const due=loans.filter(l=>l.status!=='paid').reduce((a,l)=>a+(l.remaining||0),0);
   c.innerHTML=`
     <div class="pageTitle"><span>🏦</span>My Loans</div>
-    ${due>0?`<div class="dueAlert">⚠️ तपाईको  ${fmt(due)} लोन तिर्न बाँकि छ।!</div>`:''}
+    ${due>0?`<div class="dueAlert">⚠️ तपाईको ${fmt(due)} ऋण तिर्न बाँकी छ!</div>`:''}
     <div class="statsGrid" style="grid-template-columns:repeat(2,1fr);max-width:320px">
       <div class="statCard"><div class="sIcon">🏦</div><div class="sVal" style="color:#f87171">${fmt(due)}</div><div class="sLabel">Total Due</div></div>
       <div class="statCard"><div class="sIcon">📋</div><div class="sVal">${loans.length}</div><div class="sLabel">Total Loans</div></div>
@@ -2639,7 +2642,7 @@ async function renderMyLoans(){
 async function renderMySavings(){
   const c=document.getElementById('mainContent');
   const snap=await db.collection('savings').where('memberId','==',currentUser.uid).get().catch(()=>({docs:[]}));
-  const savs=snap.docs.map(d=>({id:d.id,...d.data()}));
+  const savs=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'0')>(a.date||'0')?1:-1);
   const total=savs.reduce((a,s)=>a+s.amount,0);
   c.innerHTML=`
     <div class="pageTitle"><span>🐷</span>My Savings</div>
