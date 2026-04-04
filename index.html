@@ -1402,12 +1402,13 @@ async function renderDashboard(){
         </div>`;
     } else {
       const uid=currentUser.uid;
-      const [myTxSnap,myLSnap,mySSnap,myFSnap,annSnap]=await Promise.all([
+      const [myTxSnap,myLSnap,mySSnap,myFSnap,annSnap,clubExpSnap]=await Promise.all([
         db.collection('transactions').where('memberId','==',uid).get().catch(()=>({docs:[]})),
         db.collection('loans').where('memberId','==',uid).get().catch(()=>({docs:[]})),
         db.collection('savings').where('memberId','==',uid).get().catch(()=>({docs:[]})),
         db.collection('fines').where('memberId','==',uid).get().catch(()=>({docs:[]})),
         db.collection('announcements').orderBy('createdAt','desc').limit(3).get().catch(()=>({docs:[]})),
+        db.collection('transactions').where('type','==','expense').orderBy('date','desc').limit(5).get().catch(()=>({docs:[]})),
       ]);
       // Also get savings added by admin for this member
       const adminSavSnap=await db.collection('savings').where('memberId','==',uid).get().catch(()=>({docs:[]}));
@@ -1417,11 +1418,12 @@ async function renderDashboard(){
       const sav=mySSnap.docs.reduce((a,d)=>a+(d.data().amount||0),0);
       const fines=myFSnap.docs.filter(d=>d.data().status==='pending').reduce((a,d)=>a+(d.data().amount||0),0);
       const anns=annSnap.docs.map(d=>({id:d.id,...d.data()}));
+      const clubExps=clubExpSnap.docs.map(d=>({id:d.id,...d.data()}));
 
       c.innerHTML=`
         <div class="pageTitle"><span>📊</span>My Dashboard</div>
-        ${lDue>0||fines>0?`<div class="dueAlert">⚠️ तपाईको ${fmt(lDue+fines)} ऋण तिर्न बाँकी छ।!</div>`:''}
-        ${anns.length>0?`<div style="margin-bottom:14px">
+        ${lDue>0||fines>0?`<div class="dueAlert">⚠️ तपाईको ${fmt(lDue+fines)} बाँकी छ — <button class="btnSm" style="padding:4px 12px;font-size:11px;margin-left:8px" onclick="navigate('payrequest')">Pay Now →</button></div>`:''}
+        ${anns.length>0?`<div style="margin-bottom:16px">
           <div style="font-size:11px;font-weight:800;color:#3b82f6;letter-spacing:1px;margin-bottom:8px;text-transform:uppercase">📌 Bulletin Board</div>
           <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:4px">
             ${anns.map(a=>`<div onclick="navigate('meetings')" style="min-width:200px;flex-shrink:0;background:#fff;border-left:4px solid ${a.pinned?'#f59e0b':'#3b82f6'};border-radius:10px;padding:12px 14px;cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,0.15)">
@@ -1430,23 +1432,62 @@ async function renderDashboard(){
             </div>`).join('')}
           </div>
         </div>`:''}
-        <div class="statsGrid">
-          <div class="statCard" onclick="navigate('myfees')" style="cursor:pointer"><div class="sIcon">✅</div><div class="sVal" style="color:#4ade80">${fmt(paid)}</div><div class="sLabel">Total Paid</div></div>
-          <div class="statCard" onclick="navigate('myloans')" style="cursor:pointer"><div class="sIcon">🏦</div><div class="sVal" style="color:#f87171">${fmt(lDue)}</div><div class="sLabel">Loan Due</div></div>
-          <div class="statCard" onclick="navigate('mysavings')" style="cursor:pointer"><div class="sIcon">🐷</div><div class="sVal" style="color:#34d399">${fmt(sav)}</div><div class="sLabel">My Savings</div></div>
-          <div class="statCard" onclick="navigate('notifications')" style="cursor:pointer"><div class="sIcon">⚠️</div><div class="sVal" style="color:#fbbf24">${fmt(fines)}</div><div class="sLabel">Pending Fines</div></div>
+
+        <!-- 3D Stat Cards -->
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px">
+          <div onclick="navigate('myfees')" style="cursor:pointer;border-radius:16px;padding:18px;background:linear-gradient(135deg,#065f46,#047857);box-shadow:0 8px 24px rgba(4,120,87,0.35),inset 0 1px 0 rgba(255,255,255,0.15);position:relative;overflow:hidden;transform:translateZ(0)">
+            <div style="position:absolute;top:-20px;right:-20px;width:80px;height:80px;background:rgba(255,255,255,0.06);border-radius:50%"></div>
+            <div style="font-size:22px;margin-bottom:6px">✅</div>
+            <div style="font-size:20px;font-weight:900;color:#fff">${fmt(paid)}</div>
+            <div style="font-size:10px;color:rgba(255,255,255,0.7);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">Total Paid</div>
+          </div>
+          <div onclick="navigate('myloans')" style="cursor:pointer;border-radius:16px;padding:18px;background:linear-gradient(135deg,#7f1d1d,#991b1b);box-shadow:0 8px 24px rgba(153,27,27,0.35),inset 0 1px 0 rgba(255,255,255,0.15);position:relative;overflow:hidden">
+            <div style="position:absolute;top:-20px;right:-20px;width:80px;height:80px;background:rgba(255,255,255,0.06);border-radius:50%"></div>
+            <div style="font-size:22px;margin-bottom:6px">🏦</div>
+            <div style="font-size:20px;font-weight:900;color:#fff">${fmt(lDue)}</div>
+            <div style="font-size:10px;color:rgba(255,255,255,0.7);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">Loan Due</div>
+          </div>
+          <div onclick="navigate('mysavings')" style="cursor:pointer;border-radius:16px;padding:18px;background:linear-gradient(135deg,#1e3a5f,#1d4ed8);box-shadow:0 8px 24px rgba(29,78,216,0.35),inset 0 1px 0 rgba(255,255,255,0.15);position:relative;overflow:hidden">
+            <div style="position:absolute;top:-20px;right:-20px;width:80px;height:80px;background:rgba(255,255,255,0.06);border-radius:50%"></div>
+            <div style="font-size:22px;margin-bottom:6px">🐷</div>
+            <div style="font-size:20px;font-weight:900;color:#fff">${fmt(sav)}</div>
+            <div style="font-size:10px;color:rgba(255,255,255,0.7);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">My Savings</div>
+          </div>
+          <div onclick="navigate('notifications')" style="cursor:pointer;border-radius:16px;padding:18px;background:linear-gradient(135deg,#78350f,#b45309);box-shadow:0 8px 24px rgba(180,83,9,0.35),inset 0 1px 0 rgba(255,255,255,0.15);position:relative;overflow:hidden">
+            <div style="position:absolute;top:-20px;right:-20px;width:80px;height:80px;background:rgba(255,255,255,0.06);border-radius:50%"></div>
+            <div style="font-size:22px;margin-bottom:6px">⚠️</div>
+            <div style="font-size:20px;font-weight:900;color:#fff">${fmt(fines)}</div>
+            <div style="font-size:10px;color:rgba(255,255,255,0.7);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">Pending Fines</div>
+          </div>
         </div>
-        <div class="card">
-          <div class="cardHead">Recent Transactions</div>
+
+        <!-- Club Expenses Transparency -->
+        <div class="card" style="margin-bottom:16px;border:1px solid rgba(99,102,241,0.3);background:linear-gradient(135deg,rgba(99,102,241,0.05),rgba(139,92,246,0.03))">
+          <div class="cardHead" style="color:#818cf8">🔍 Club Kharcha — Transparency</div>
           <div class="tableWrap"><table>
-            <thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Type</th></tr></thead>
-            <tbody>${myTxSnap.docs.length===0?`<tr><td colspan="4" class="empty">कुनै पनि transaction छैन</td></tr>`:
-              myTxSorted.slice(0,5).map(t=>{return`<tr>
+            <thead><tr><th>Date (BS)</th><th>Category</th><th>Note</th><th>Amount</th></tr></thead>
+            <tbody>${clubExps.length===0?`<tr><td colspan="4" class="empty">कुनै club kharcha छैन</td></tr>`:
+              clubExps.map(t=>`<tr>
+                <td>${NepaliDate.convert(new Date(t.date||Date.now())).str}</td>
+                <td>${t.category||'—'}</td>
+                <td style="font-size:12px;color:var(--text2)">${t.note||'—'}</td>
+                <td style="font-weight:800;color:#f87171">${fmt(t.amount)}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table></div>
+        </div>
+
+        <!-- Recent My Transactions -->
+        <div class="card">
+          <div class="cardHead">Recent Activity</div>
+          <div class="tableWrap"><table>
+            <thead><tr><th>Date</th><th>Category</th><th>Amount</th></tr></thead>
+            <tbody>${myTxSnap.docs.length===0?`<tr><td colspan="3" class="empty">कुनै पनि transaction छैन</td></tr>`:
+              myTxSorted.slice(0,5).map(t=>`<tr>
                 <td>${NepaliDate.convert(new Date(t.date||Date.now())).str}</td>
                 <td>${t.category||'—'}</td>
                 <td style="font-weight:800;color:${t.type==='income'?'#4ade80':'#f87171'}">${fmt(t.amount)}</td>
-                <td><span class="tag ${t.type}">${t.type}</span></td>
-              </tr>`;}).join('')}
+              </tr>`).join('')}
             </tbody>
           </table></div>
         </div>`;
@@ -3018,37 +3059,73 @@ window.showQR=showQR;
 // ======= QR QUICK ENTRY =======
 function qrEntry(mId,mName){
   const modal=document.createElement('div');modal.className='modalOverlay';
-  modal.innerHTML=`<div class="modalCard" style="max-width:320px">
-    <h2>📷 Quick Entry<br/><span style="font-size:14px;color:var(--text2)">${mName}</span></h2>
+  modal.innerHTML=`<div class="modalCard" style="max-width:340px">
+    <h2>⚡ Quick Entry<br/><span style="font-size:14px;color:var(--text2);font-weight:500">${mName}</span></h2>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0">
-      <button class="btnSm" onclick="doQE('${mId}','${mName}','savings')" style="padding:14px;font-size:13px">🐷<br/>बचत</button>
-      <button class="btnSm btnGreen" onclick="doQE('${mId}','${mName}','loan')" style="padding:14px;font-size:13px">🏦<br/>ऋण तिर्ने</button>
-      <button class="btnSm" style="background:rgba(245,158,11,.15);color:var(--gold);padding:14px;font-size:13px" onclick="doQE('${mId}','${mName}','fine')">⚠️<br/>जरिवाना</button>
-      <button class="btnSm" style="background:rgba(139,92,246,.15);color:#a78bfa;padding:14px;font-size:13px" onclick="doQE('${mId}','${mName}','fee')">💰<br/>शुल्क</button>
+      <button class="btnSm" onclick="doQE('${mId}','${mName}','savings')" style="padding:16px;font-size:13px;border-radius:12px">🐷<br/><span style="font-size:11px">बचत</span></button>
+      <button class="btnSm btnGreen" onclick="doQE('${mId}','${mName}','loan')" style="padding:16px;font-size:13px;border-radius:12px">🏦<br/><span style="font-size:11px">ऋण तिर्ने</span></button>
+      <button class="btnSm" style="background:linear-gradient(135deg,rgba(129,140,248,0.2),rgba(99,102,241,0.1));color:#818cf8;border:1px solid rgba(129,140,248,0.3);padding:16px;font-size:13px;border-radius:12px" onclick="doQE('${mId}','${mName}','interest')">💹<br/><span style="font-size:11px">ब्याज मात्र</span></button>
+      <button class="btnSm" style="background:rgba(245,158,11,.15);color:var(--gold);border:1px solid rgba(245,158,11,.2);padding:16px;font-size:13px;border-radius:12px" onclick="doQE('${mId}','${mName}','fine')">⚠️<br/><span style="font-size:11px">जरिवाना</span></button>
+      <button class="btnSm" style="background:rgba(139,92,246,.15);color:#a78bfa;border:1px solid rgba(139,92,246,.2);padding:16px;font-size:13px;border-radius:12px;grid-column:1/-1" onclick="doQE('${mId}','${mName}','fee')">💰 शुल्क / Fee</button>
     </div>
-    <div class="modalActions"><button class="btnGhost" onclick="this.closest('.modalOverlay').remove()">Close</button></div>
+    <div class="modalActions"><button class="btnGhost" onclick="this.closest('.modalOverlay').remove()">Cancel</button></div>
   </div>`;
   document.body.appendChild(modal);
   window.doQE=async(id,name,type)=>{
-    const amt=Number(prompt(`${name} — ${type} रकम (रु.):`));
+    const amt=Number(prompt(`${name} — ${type==='interest'?'ब्याज रकम':'रकम'} (रु.):`));
     if(!amt||amt<=0)return;
     const method=prompt('तरिका (Cash/eSewa/Bank):')||'Cash';
     const bsd=NepaliDate.convert(new Date()).str;
-    if(type==='savings') await db.collection('savings').add({memberId:id,memberName:name,amount:amt,method,date:todayStr(),dateBS:bsd,note:'Quick Entry',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
-    else if(type==='loan'){
+    if(type==='savings'){
+      await db.collection('savings').add({memberId:id,memberName:name,amount:amt,method,date:todayStr(),dateBS:bsd,note:'Quick Entry',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+      await db.collection('transactions').add({type:'income',category:'Savings',amount:amt,date:todayStr(),dateBS:bsd,memberId:id,memberName:name,method,note:'Quick Entry - Savings',by:currentUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    } else if(type==='loan'||type==='interest'){
       const ls=await db.collection('loans').where('memberId','==',id).get();
       const al=ls.docs.filter(d=>d.data().status!=='paid');
       if(al.length===0){toast('कुनै active loan छैन!','error');return;}
-      const nr=Math.max(0,(al[0].data().remaining||0)-amt);
-      await al[0].ref.update({remaining:nr,status:nr===0?'paid':'partial'});
+      let loanDoc=al[0];
+      if(al.length>1){
+        const names=al.map((d,i)=>`${i+1}. ${fmt(d.data().amount)} (बाँकी: ${fmt(d.data().remaining||0)})`).join('\n');
+        const idx=Number(prompt(`कुन loan?\n${names}\nNumber हाल्नुस्:`))-1;
+        if(idx>=0&&idx<al.length)loanDoc=al[idx];
+      }
+      const lData=loanDoc.data();
+      const rate=lData.rate||0;
+      const remaining=lData.remaining||0;
+      if(type==='interest'){
+        // Interest only — principal untouched
+        const autoInterest=rate>0?Math.round(remaining*rate/100):0;
+        const actualInterest=amt;
+        await db.collection('loans').doc(loanDoc.id).collection('payments').add({
+          amount:actualInterest,principal:0,interest:actualInterest,method,
+          remaining,date:todayStr(),dateBS:bsd,note:'Interest only payment',
+          by:currentUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()
+        });
+        await db.collection('transactions').add({type:'income',category:'Loan Interest',amount:actualInterest,date:todayStr(),dateBS:bsd,memberId:id,memberName:name,method,note:`Loan interest payment (Principal unchanged: ${fmt(remaining)})`,by:currentUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+        await addNotif(`💹 ${name} ले ${fmt(actualInterest)} ब्याज तिर्यो। Loan principal: ${fmt(remaining)}`, 'info', id);
+        toast(`${name} को ब्याज entry भयो! Principal unchanged.`);
+      } else {
+        // Full repayment — split principal + interest
+        const interest=rate>0?Math.round(remaining*rate/100):0;
+        const principal=Math.max(0,amt-interest);
+        const newRem=Math.max(0,remaining-principal);
+        await loanDoc.ref.update({remaining:newRem,status:newRem===0?'paid':'partial',lastPayment:{amount:amt,date:todayStr(),dateBS:bsd,method,interest,principal}});
+        await db.collection('loans').doc(loanDoc.id).collection('payments').add({amount:amt,principal,interest,method,remaining:newRem,date:todayStr(),dateBS:bsd,by:currentUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+        await db.collection('transactions').add({type:'income',category:'Loan Repayment',amount:amt,date:todayStr(),dateBS:bsd,memberId:id,memberName:name,method,note:`Loan repayment (Principal:${fmt(principal)}, Interest:${fmt(interest)})`,by:currentUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+        await addNotif(`🏦 ${name} ले ${fmt(amt)} loan तिर्यो। बाँकी: ${fmt(newRem)}`,'success',id);
+        toast(`${name} को loan entry भयो!`);
+      }
     } else if(type==='fine'){
       const r=prompt('कारण:')||'Rule Violation';
       await db.collection('fines').add({memberId:id,memberName:name,amount:amt,category:'fine',reason:r,date:todayStr(),dateBS:bsd,status:'pending',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+      await db.collection('transactions').add({type:'income',category:'Fine',amount:amt,date:todayStr(),dateBS:bsd,memberId:id,memberName:name,method,note:'Quick Entry - Fine: '+r,by:currentUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    } else if(type==='fee'){
+      await db.collection('transactions').add({type:'income',category:'Fee',amount:amt,date:todayStr(),dateBS:bsd,memberId:id,memberName:name,method,note:'Quick Entry - Fee',by:currentUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
     }
-    await db.collection('transactions').add({type:'income',category:type==='savings'?'Savings':type==='loan'?'Loan Repayment':'Fee',amount:amt,date:todayStr(),dateBS:bsd,memberId:id,memberName:name,method,note:'Quick Entry',by:currentUser.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
-    await addNotif(`${type==='savings'?'🐷':'🏦'} ${name} — ${fmt(amt)} ${type}`,'success',id);
-    toast(`${name} को ${type} entry भयो!`);modal.remove();
-    if(currentPage==='members')renderMembersHub();
+    if(type!=='loan'&&type!=='interest') await addNotif(`${type==='savings'?'🐷':'💰'} ${name} — ${fmt(amt)} ${type} entry`,'success',id);
+    modal.remove();
+    if(currentPage==='memberprofile')renderMemberProfile();
+    else if(currentPage==='members')renderMembersHub();
   };
 }
 window.qrEntry=qrEntry;
