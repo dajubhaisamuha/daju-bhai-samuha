@@ -1059,6 +1059,7 @@ const adminLinks=[
   {id:'loans',icon:'🏦',label:'Loans'},
   {id:'savings',icon:'🐷',label:'Savings'},
   {id:'fines',icon:'⚠️',label:'Fines & Dues'},
+  {id:'interest',icon:'🏛️',label:'Bank Interest'},
   {id:'members',icon:'👥',label:'Members'},
   {id:'meetings',icon:'📅',label:'Meetings'},
   {id:'reports',icon:'📈',label:'Reports'},
@@ -1291,24 +1292,24 @@ function renderPage(page){
     loans:()=>isAdmin?renderLoans():navigate('dashboard'),
     savings:()=>isAdmin?renderSavings():navigate('dashboard'),
     fines:()=>isAdmin?renderFines():navigate('dashboard'),
+    interest:()=>isAdmin?renderInterest():navigate('dashboard'),
     members:()=>isAdmin?renderMembersHub():navigate('dashboard'),
     memberprofile:()=>isAdmin?renderMemberProfile():navigate('dashboard'),
     meetings:renderMeetingsHub,
     reports:()=>isAdmin?renderReports():navigate('dashboard'),
+    annualreport:()=>isAdmin?renderAnnualReport():navigate('dashboard'),
     notifications:renderNotifications,
-    loanrequests:()=>isAdmin?renderLoanRequests():navigate('dashboard'),
-    loanrequest:()=>!isAdmin?renderLoanRequestForm():navigate('dashboard'),
     loginlogs:()=>isAdmin?renderLoginLogs():navigate('dashboard'),
+    activitylog:()=>isAdmin?renderActivityLog():navigate('dashboard'),
+    loanrequests:()=>isAdmin?renderLoanRequests():navigate('dashboard'),
     settings:renderSettings,
     myfees:renderMyFees,
     myloans:renderMyLoans,
     mysavings:renderMySavings,
+    loanrequest:()=>!isAdmin?renderLoanRequestForm():navigate('dashboard'),
     payrequest:()=>!isAdmin?renderPayRequest():navigate('dashboard'),
     profile:renderProfile,
     chat:renderChat,
-    activitylog:()=>isAdmin?renderActivityLog():navigate('dashboard'),
-    annualreport:()=>isAdmin?renderAnnualReport():navigate('dashboard'),
-    interest:()=>isAdmin?renderInterest():navigate('dashboard'),
   };
   try{
     if(pages[page]) pages[page]();
@@ -2528,93 +2529,85 @@ function renderPinSettings(){
 
 // ====== MY FEES ======
 async function renderMyFees(){
-  const c=document.getElementById('mainContent');
+  const cont=document.getElementById('mainContent');
   const uid=currentUser.uid;
-  c.innerHTML=`<div class="pageTitle"><span>📒</span>My Passbook</div><div style="text-align:center;padding:40px"><div style="width:36px;height:36px;border:3px solid rgba(245,158,11,.2);border-top:3px solid var(--gold);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto"></div></div>`;
+  cont.innerHTML='<div class="pageTitle"><span>📒</span>My Passbook</div><div style="text-align:center;padding:40px"><div style="width:36px;height:36px;border:3px solid rgba(245,158,11,.2);border-top:3px solid var(--gold);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto"></div></div>';
   try{
-    const [txSnap,fineSnap,savSnap,loanSnap]=await Promise.all([
+    const [txSnap,fSnap,sSnap,lSnap]=await Promise.all([
       db.collection('transactions').where('memberId','==',uid).get().catch(()=>({docs:[]})),
       db.collection('fines').where('memberId','==',uid).get().catch(()=>({docs:[]})),
       db.collection('savings').where('memberId','==',uid).get().catch(()=>({docs:[]})),
       db.collection('loans').where('memberId','==',uid).get().catch(()=>({docs:[]})),
     ]);
     const txs=txSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'0')>(a.date||'0')?1:-1);
-    const fines=fineSnap.docs.map(d=>({id:d.id,...d.data()}));
-    const savs=savSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'0')>(a.date||'0')?1:-1);
-    const loans=loanSnap.docs.map(d=>({id:d.id,...d.data()}));
+    const fines=fSnap.docs.map(d=>({id:d.id,...d.data()}));
+    const savs=sSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'0')>(a.date||'0')?1:-1);
+    const loans=lSnap.docs.map(d=>({id:d.id,...d.data()}));
     const totalPaid=txs.filter(t=>t.type==='income').reduce((a,t)=>a+(t.amount||0),0);
     const totalSav=savs.reduce((a,s)=>a+(s.amount||0),0);
     const loanDue=loans.filter(l=>l.status!=='paid').reduce((a,l)=>a+(l.remaining||0),0);
     const pendFines=fines.filter(f=>f.status==='pending').reduce((a,f)=>a+(f.amount||0),0);
-    c.innerHTML=`
+    cont.innerHTML=`
       <div class="pageTitle"><span>📒</span>My Passbook</div>
       <div class="statsGrid">
         <div class="statCard"><div class="sIcon">✅</div><div class="sVal" style="color:#4ade80">${fmt(totalPaid)}</div><div class="sLabel">Total Paid</div></div>
-        <div class="statCard"><div class="sIcon">🐷</div><div class="sVal" style="color:#34d399">${fmt(totalSav)}</div><div class="sLabel">Total Savings</div></div>
+        <div class="statCard"><div class="sIcon">🐷</div><div class="sVal" style="color:#34d399">${fmt(totalSav)}</div><div class="sLabel">Savings</div></div>
         <div class="statCard"><div class="sIcon">🏦</div><div class="sVal" style="color:#f87171">${fmt(loanDue)}</div><div class="sLabel">Loan Due</div></div>
         <div class="statCard"><div class="sIcon">⚠️</div><div class="sVal" style="color:#fbbf24">${fmt(pendFines)}</div><div class="sLabel">Fines Due</div></div>
       </div>
-      <!-- Savings -->
-      <div class="card" style="margin-bottom:14px">
-        <div class="cardHead">🐷 Savings History</div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="cardHead">🐷 Savings</div>
         <div class="tableWrap"><table>
-          <thead><tr><th>Date (BS)</th><th>Amount</th><th>Method</th><th>Note</th></tr></thead>
-          <tbody>${savs.length===0?`<tr><td colspan="4" class="empty">कुनै savings छैन</td></tr>`:
-            savs.map(s=>`<tr>
-              <td style="color:var(--gold)">${s.dateBS||NepaliDate.convert(new Date(s.date||Date.now())).str}</td>
-              <td style="font-weight:800;color:#34d399">${fmt(s.amount)}</td>
-              <td>${s.method||'Cash'}</td>
-              <td>${s.note||'—'}</td>
-            </tr>`).join('')}
+          <thead><tr><th>Date (BS)</th><th>Amount</th><th>Method</th></tr></thead>
+          <tbody>${savs.length===0?'<tr><td colspan="3" class="empty">कुनै savings छैन</td></tr>':
+            savs.map(s=>\`<tr>
+              <td>\${s.dateBS||NepaliDate.convert(new Date(s.date||Date.now())).str}</td>
+              <td style="font-weight:800;color:#34d399">\${fmt(s.amount)}</td>
+              <td>\${s.method||'Cash'}</td>
+            </tr>\`).join('')}
           </tbody>
         </table></div>
       </div>
-      <!-- Loans -->
-      ${loans.length>0?`<div class="card" style="margin-bottom:14px">
-        <div class="cardHead">🏦 Loan History</div>
+      ${loans.length>0?\`<div class="card" style="margin-bottom:12px">
+        <div class="cardHead">🏦 Loans</div>
         <div class="tableWrap"><table>
-          <thead><tr><th>Amount</th><th>Remaining</th><th>Rate</th><th>Date</th><th>Status</th></tr></thead>
-          <tbody>${loans.map(l=>`<tr>
-            <td style="font-weight:700">${fmt(l.amount)}</td>
-            <td style="color:#f87171;font-weight:700">${fmt(l.remaining??l.amount)}</td>
-            <td>${l.rate||0}%/mo</td>
-            <td>${l.issueDate||'—'}</td>
-            <td><span class="tag ${l.status==='paid'?'paid':l.status==='partial'?'pending':'loan'}">${l.status||'active'}</span></td>
-          </tr>`).join('')}
-          </tbody>
+          <thead><tr><th>Amount</th><th>Remaining</th><th>Rate</th><th>Status</th></tr></thead>
+          <tbody>\${loans.map(l=>\\`<tr>
+            <td style="font-weight:700">\\${fmt(l.amount)}</td>
+            <td style="color:#f87171;font-weight:700">\\${fmt(l.remaining??l.amount)}</td>
+            <td>\\${l.rate||0}%/mo</td>
+            <td><span class="tag \\${l.status==='paid'?'paid':l.status==='partial'?'pending':'loan'}">\\${l.status||'active'}</span></td>
+          </tr>\\`).join('')}</tbody>
         </table></div>
-      </div>`:''}
-      <!-- Fines -->
-      ${fines.length>0?`<div class="card" style="margin-bottom:14px">
+      </div>\`:''}
+      ${fines.length>0?\`<div class="card" style="margin-bottom:12px">
         <div class="cardHead">⚠️ Fines</div>
         <div class="tableWrap"><table>
           <thead><tr><th>Reason</th><th>Amount</th><th>Date</th><th>Status</th></tr></thead>
-          <tbody>${fines.map(f=>`<tr>
-            <td>${f.reason||'—'}</td>
-            <td style="color:#fbbf24;font-weight:700">${fmt(f.amount)}</td>
-            <td>${f.dateBS||f.date||'—'}</td>
-            <td><span class="tag ${f.status==='paid'?'paid':'pending'}">${f.status||'pending'}</span></td>
-          </tr>`).join('')}
-          </tbody>
+          <tbody>\${fines.map(f=>\\`<tr>
+            <td>\\${f.reason||'—'}</td>
+            <td style="color:#fbbf24;font-weight:700">\\${fmt(f.amount)}</td>
+            <td>\\${f.dateBS||f.date||'—'}</td>
+            <td><span class="tag \\${f.status==='paid'?'paid':'pending'}">\\${f.status||'pending'}</span></td>
+          </tr>\\`).join('')}</tbody>
         </table></div>
-      </div>`:''}
-      <!-- All Transactions -->
+      </div>\`:''}
       <div class="card">
         <div class="cardHead">💳 All Transactions</div>
         <div class="tableWrap"><table>
           <thead><tr><th>Date (BS)</th><th>Category</th><th>Amount</th><th>Method</th></tr></thead>
-          <tbody>${txs.length===0?`<tr><td colspan="4" class="empty">कुनै transaction छैन</td></tr>`:
-            txs.map(t=>`<tr>
-              <td style="color:var(--gold)">${t.dateBS||NepaliDate.convert(new Date(t.date||Date.now())).str}</td>
-              <td>${t.category||'—'}</td>
-              <td style="font-weight:800;color:${t.type==='income'?'#4ade80':'#f87171'}">${fmt(t.amount)}</td>
-              <td>${t.method||'Cash'}</td>
-            </tr>`).join('')}
+          <tbody>${txs.length===0?'<tr><td colspan="4" class="empty">कुनै transaction छैन</td></tr>':
+            txs.map(t=>\`<tr>
+              <td style="color:var(--gold)">\${t.dateBS||NepaliDate.convert(new Date(t.date||Date.now())).str}</td>
+              <td>\${t.category||'—'}</td>
+              <td style="font-weight:800;color:\${t.type==='income'?'#4ade80':'#f87171'}">\${fmt(t.amount)}</td>
+              <td>\${t.method||'Cash'}</td>
+            </tr>\`).join('')}
           </tbody>
         </table></div>
       </div>`;
   }catch(e){
-    c.innerHTML=`<div class="pageTitle"><span>📒</span>My Passbook</div><div class="card"><div class="empty">Error: ${e.message}</div></div>`;
+    cont.innerHTML=\`<div class="pageTitle"><span>📒</span>My Passbook</div><div class="card"><div class="empty">Error: \${e.message}</div></div>\`;
   }
 }
 
@@ -2659,15 +2652,9 @@ async function renderMySavings(){
   const snap=await db.collection('savings').where('memberId','==',currentUser.uid).get().catch(()=>({docs:[]}));
   const savs=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'0')>(a.date||'0')?1:-1);
   const total=savs.reduce((a,s)=>a+(s.amount||0),0);
-  // Monthly grouping
   const monthly={};
-  savs.forEach(s=>{
-    const m=(s.date||'').substring(0,7);
-    if(!m)return;
-    if(!monthly[m])monthly[m]=0;
-    monthly[m]+=s.amount||0;
-  });
-  const monthKeys=Object.keys(monthly).sort().reverse();
+  savs.forEach(s=>{const m=(s.date||'').substring(0,7);if(m){if(!monthly[m])monthly[m]=0;monthly[m]+=s.amount||0;}});
+  const mKeys=Object.keys(monthly).sort().reverse();
   c.innerHTML=`
     <div class="pageTitle"><span>🐷</span>My Savings</div>
     <div class="statsGrid" style="grid-template-columns:repeat(2,1fr);max-width:320px">
@@ -3386,8 +3373,8 @@ async function checkBirthdays(){
 
 // ====== ANNUAL REPORT ======
 async function renderAnnualReport(){
-  const c=document.getElementById('mainContent');
-  c.innerHTML=`<div class="pageTitle"><span>📋</span>Annual Report</div><div style="text-align:center;padding:40px"><div style="width:36px;height:36px;border:3px solid rgba(245,158,11,.2);border-top:3px solid var(--gold);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto"></div><div style="margin-top:12px;color:var(--text2)">Loading...</div></div>`;
+  const cont=document.getElementById('mainContent');
+  cont.innerHTML='<div class="pageTitle"><span>📋</span>Annual Report</div><div style="text-align:center;padding:40px"><div style="width:36px;height:36px;border:3px solid rgba(245,158,11,.2);border-top:3px solid var(--gold);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto"></div></div>';
   try{
     const [txSnap,sSnap,lSnap,fSnap,mSnap]=await Promise.all([
       db.collection('transactions').get(),
@@ -3406,24 +3393,21 @@ async function renderAnnualReport(){
     const tSav=savs.reduce((a,s)=>a+(s.amount||0),0);
     const tLoan=loans.filter(l=>l.status!=='paid').reduce((a,l)=>a+(l.remaining||0),0);
     const tFines=fines.filter(f=>f.status==='pending').reduce((a,f)=>a+(f.amount||0),0);
-
-    // Monthly breakdown
     const monthly={};
     txs.forEach(t=>{
-      const m=(t.date||'').substring(0,7);
-      if(!m)return;
+      const m=(t.date||''). substring(0,7);if(!m)return;
       if(!monthly[m])monthly[m]={income:0,expense:0};
       if(t.type==='income')monthly[m].income+=t.amount||0;
       else monthly[m].expense+=t.amount||0;
     });
-    const months=Object.keys(monthly).sort().slice(-12);
-
-    c.innerHTML=`
+    const mKeys=Object.keys(monthly).sort().reverse().slice(0,12);
+    cont.innerHTML=`
       <div class="pageTitle"><span>📋</span>Annual Report</div>
       <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
-        <button class="btnSm" onclick="printAR()">🖨️ Print</button>
-        <button class="btnSm btnGreen" onclick="exportAllDataExcel()">📊 Excel Backup</button>
+        <button class="btnSm" onclick="window.open('about:blank').document.write(document.getElementById('arPrint').innerHTML)">🖨️ Print</button>
+        <button class="btnSm btnGreen" onclick="exportAllDataExcel()">📊 Excel</button>
       </div>
+      <div id="arPrint">
       <div class="statsGrid">
         <div class="statCard"><div class="sIcon">💰</div><div class="sVal" style="color:#4ade80">${fmt(tInc)}</div><div class="sLabel">Total Income</div></div>
         <div class="statCard"><div class="sIcon">📤</div><div class="sVal" style="color:#f87171">${fmt(tExp)}</div><div class="sLabel">Total Expense</div></div>
@@ -3436,8 +3420,8 @@ async function renderAnnualReport(){
         <div class="cardHead">Monthly Breakdown</div>
         <div class="tableWrap"><table>
           <thead><tr><th>Month</th><th>Income</th><th>Expense</th><th>Net</th></tr></thead>
-          <tbody>${months.length===0?`<tr><td colspan="4" class="empty">No data</td></tr>`:
-            months.map(m=>`<tr>
+          <tbody>${mKeys.length===0?'<tr><td colspan="4" class="empty">No data</td></tr>':
+            mKeys.map(m=>`<tr>
               <td style="font-weight:600">${m}</td>
               <td style="color:#4ade80;font-weight:700">${fmt(monthly[m].income)}</td>
               <td style="color:#f87171;font-weight:700">${fmt(monthly[m].expense)}</td>
@@ -3447,67 +3431,27 @@ async function renderAnnualReport(){
         </table></div>
       </div>
       <div class="card">
-        <div class="cardHead">Member-wise Summary</div>
+        <div class="cardHead">Member Summary</div>
         <div class="tableWrap"><table>
           <thead><tr><th>Member</th><th>Savings</th><th>Loan Due</th><th>Fines Due</th></tr></thead>
           <tbody>${members.map(m=>{
             const ms=savs.filter(s=>s.memberId===m.id).reduce((a,s)=>a+(s.amount||0),0);
             const ml=loans.filter(l=>l.memberId===m.id&&l.status!=='paid').reduce((a,l)=>a+(l.remaining||0),0);
             const mf=fines.filter(f=>f.memberId===m.id&&f.status==='pending').reduce((a,f)=>a+(f.amount||0),0);
-            return`<tr>
-              <td style="font-weight:700">${m.name||'—'}</td>
-              <td style="color:#34d399;font-weight:700">${fmt(ms)}</td>
-              <td style="color:${ml>0?'#f87171':'#4ade80'};font-weight:700">${fmt(ml)}</td>
-              <td style="color:${mf>0?'#fbbf24':'#4ade80'};font-weight:700">${fmt(mf)}</td>
-            </tr>`;}).join('')}
+            return\`<tr>
+              <td style="font-weight:700">\${m.name||'—'}</td>
+              <td style="color:#34d399;font-weight:700">\${fmt(ms)}</td>
+              <td style="color:\${ml>0?'#f87171':'#4ade80'};font-weight:700">\${fmt(ml)}</td>
+              <td style="color:\${mf>0?'#fbbf24':'#4ade80'};font-weight:700">\${fmt(mf)}</td>
+            </tr>\`;}).join('')}
           </tbody>
         </table></div>
+      </div>
       </div>`;
-
-    window.printAR=()=>{
-      const w=window.open('','_blank');
-      w.document.write(`<!DOCTYPE html><html><head><title>Annual Report - Daju-Bhai Samuha</title>
-        <style>body{font-family:Arial,sans-serif;padding:30px;max-width:700px;margin:0 auto}
-        h1{text-align:center;border-bottom:2px solid #333;padding-bottom:8px}
-        table{width:100%;border-collapse:collapse;margin:12px 0}
-        td,th{padding:8px 10px;border:1px solid #ddd;text-align:left}
-        th{background:#f5f5f5;font-weight:700}
-        .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}
-        .box{padding:12px;border:1px solid #ddd;border-radius:8px;text-align:center}
-        .box .v{font-size:16px;font-weight:800}.box .l{font-size:10px;color:#888}
-        @media print{button{display:none}}</style>
-      </head><body>
-        <h1>🏦 दाजुभाइ समूह — Annual Report</h1>
-        <p style="text-align:center;color:#888">Generated: ${NepaliDate.convert(new Date()).str} | Dhanjugaon, Bhaktapur</p>
-        <button onclick="window.print()" style="display:block;margin:10px auto;padding:8px 20px;background:#16a34a;color:#fff;border:none;border-radius:6px;cursor:pointer">🖨️ Print</button>
-        <div class="summary">
-          <div class="box"><div class="v">${fmt(tInc)}</div><div class="l">Total Income</div></div>
-          <div class="box"><div class="v">${fmt(tExp)}</div><div class="l">Total Expense</div></div>
-          <div class="box"><div class="v">${fmt(tInc-tExp)}</div><div class="l">Balance</div></div>
-          <div class="box"><div class="v">${fmt(tSav)}</div><div class="l">Total Savings</div></div>
-          <div class="box"><div class="v">${fmt(tLoan)}</div><div class="l">Loan Due</div></div>
-          <div class="box"><div class="v">${fmt(tFines)}</div><div class="l">Fines Due</div></div>
-        </div>
-        <h2>Monthly Breakdown</h2>
-        <table><tr><th>Month</th><th>Income</th><th>Expense</th><th>Net</th></tr>
-          ${months.map(m=>`<tr><td>${m}</td><td>${fmt(monthly[m].income)}</td><td>${fmt(monthly[m].expense)}</td><td>${fmt(monthly[m].income-monthly[m].expense)}</td></tr>`).join('')}
-        </table>
-        <h2>Member-wise Summary</h2>
-        <table><tr><th>Member</th><th>Savings</th><th>Loan Due</th><th>Fines Due</th></tr>
-          ${members.map(m=>{
-            const ms=savs.filter(s=>s.memberId===m.id).reduce((a,s)=>a+(s.amount||0),0);
-            const ml=loans.filter(l=>l.memberId===m.id&&l.status!=='paid').reduce((a,l)=>a+(l.remaining||0),0);
-            const mf=fines.filter(f=>f.memberId===m.id&&f.status==='pending').reduce((a,f)=>a+(f.amount||0),0);
-            return`<tr><td>${m.name||'—'}</td><td>${fmt(ms)}</td><td>${fmt(ml)}</td><td>${fmt(mf)}</td></tr>`;}).join('')}
-        </table>
-      </body></html>`);
-      w.document.close();
-    };
   }catch(e){
-    c.innerHTML=`<div class="pageTitle"><span>📋</span>Annual Report</div><div class="card"><div class="empty">Error: ${e.message}</div></div>`;
+    cont.innerHTML=`<div class="pageTitle"><span>📋</span>Annual Report</div><div class="card"><div class="empty">Error: ${e.message}</div></div>`;
   }
 }
-
 </script>
 </body>
 </html>
