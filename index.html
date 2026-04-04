@@ -1425,7 +1425,7 @@ async function renderDashboard(){
 
       c.innerHTML=`
         <div class="pageTitle"><span>📊</span>My Dashboard</div>
-        ${lDue>0||fines>0?`<div class="dueAlert">⚠️ तपाईको ${fmt(lDue+fines)} बाँकी छ — <button class="btnSm" style="padding:4px 12px;font-size:11px;margin-left:8px" onclick="navigate('payrequest')">Pay Now →</button></div>`:''}
+        ${lDue>0||fines>0?`<div class="dueAlert">⚠️ तपाईको लोन ${fmt(lDue+fines)} बाँकी छ — <button class="btnSm" style="padding:4px 12px;font-size:11px;margin-left:8px" onclick="navigate('payrequest')">Pay Now →</button></div>`:''}
         ${anns.length>0?`<div style="margin-bottom:16px">
           <div style="font-size:11px;font-weight:800;color:#3b82f6;letter-spacing:1px;margin-bottom:8px;text-transform:uppercase">📌 Bulletin Board</div>
           <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:4px">
@@ -1466,10 +1466,10 @@ async function renderDashboard(){
 
         <!-- Club Expenses Transparency -->
         <div class="card" style="margin-bottom:16px;border:1px solid rgba(99,102,241,0.3);background:linear-gradient(135deg,rgba(99,102,241,0.05),rgba(139,92,246,0.03))">
-          <div class="cardHead" style="color:#818cf8">🔍 Club Kharcha — Transparency</div>
+          <div class="cardHead" style="color:#818cf8">🔍 समुह खर्च — बिवरण</div>
           <div class="tableWrap"><table>
             <thead><tr><th>Date (BS)</th><th>Category</th><th>Note</th><th>Amount</th></tr></thead>
-            <tbody>${clubExps.length===0?`<tr><td colspan="4" class="empty">कुनै club kharcha छैन</td></tr>`:
+            <tbody>${clubExps.length===0?`<tr><td colspan="4" class="empty">हालसम्म club बाट कुनै पनि खर्च भएको छैन</td></tr>`:
               clubExps.map(t=>`<tr>
                 <td>${NepaliDate.convert(new Date(t.date||Date.now())).str}</td>
                 <td>${t.category||'—'}</td>
@@ -2592,7 +2592,7 @@ async function renderMyLoans(){
       <div class="statCard"><div class="sIcon">📋</div><div class="sVal">${loans.length}</div><div class="sLabel">Total Loans</div></div>
     </div>
     <div class="memberGrid">
-      ${loans.length===0?'<div class="empty">कुनै पनिloan छैन 🎉</div>':loans.map(l=>{
+      ${loans.length===0?'<div class="empty">कुनै पनि loan छैन 🎉</div>':loans.map(l=>{
         const pct=l.amount>0?Math.min(100,Math.round(((l.amount-(l.remaining??l.amount))/l.amount)*100)):0;
         const issueDateBS=l.issueDate?NepaliDate.convert(new Date(l.issueDate)).str:'—';
         const dueDateBS=l.dueDate?NepaliDate.convert(new Date(l.dueDate)).str:'—';
