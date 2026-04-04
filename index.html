@@ -893,8 +893,6 @@ const NP_LABELS = {
   'My Fees':'मेरो शुल्क','My Loans':'मेरो ऋण','Loan Request':'ऋण निवेदन',
   'My Savings':'मेरो बचत','My Profile':'मेरो प्रोफाइल',
   'Pay Request':'भुक्तानी अनुरोध','Settings':'सेटिङ','Loan Request':'ऋण निवेदन',
-  'Attendance':'उपस्थिति','Group Fund':'समूह कोष','My Passbook':'मेरो पासबुक',
-  'Annual Report':'वार्षिक रिपोर्ट',
 };
 function toggleLang(){
   isNepali=!isNepali;
@@ -1063,8 +1061,6 @@ const adminLinks=[
   {id:'fines',icon:'⚠️',label:'Fines & Dues'},
   {id:'members',icon:'👥',label:'Members'},
   {id:'meetings',icon:'📅',label:'Meetings'},
-  {id:'attendance',icon:'✅',label:'Attendance'},
-  {id:'groupfund',icon:'💰',label:'Group Fund'},
   {id:'reports',icon:'📈',label:'Reports'},
   {id:'annualreport',icon:'📋',label:'Annual Report'},
   {id:'notifications',icon:'🔔',label:'Notifications',badge:'notifSideBadge'},
@@ -1073,12 +1069,11 @@ const adminLinks=[
 ];
 const memberLinks=[
   {id:'dashboard',icon:'📊',label:'Dashboard'},
-  {id:'myfees',icon:'💰',label:'My Fees'},
+  {id:'myfees',icon:'📒',label:'My Passbook'},
   {id:'myloans',icon:'🏦',label:'My Loans'},
   {id:'mysavings',icon:'🐷',label:'My Savings'},
   {id:'loanrequest',icon:'📝',label:'Loan Request'},
   {id:'payrequest',icon:'💸',label:'Pay Request'},
-  {id:'passbook',icon:'📒',label:'My Passbook'},
   {id:'meetings',icon:'📅',label:'Meetings'},
   {id:'notifications',icon:'🔔',label:'Notifications',badge:'notifSideBadge'},
   {id:'profile',icon:'👤',label:'My Profile'},
@@ -1314,9 +1309,6 @@ function renderPage(page){
     activitylog:()=>isAdmin?renderActivityLog():navigate('dashboard'),
     annualreport:()=>isAdmin?renderAnnualReport():navigate('dashboard'),
     interest:()=>isAdmin?renderInterest():navigate('dashboard'),
-    attendance:()=>isAdmin?renderAttendance():navigate('dashboard'),
-    groupfund:()=>isAdmin?renderGroupFund():navigate('dashboard'),
-    passbook:()=>!isAdmin?renderPassbook():navigate('dashboard'),
   };
   try{
     if(pages[page]) pages[page]();
@@ -2538,76 +2530,92 @@ function renderPinSettings(){
 async function renderMyFees(){
   const c=document.getElementById('mainContent');
   const uid=currentUser.uid;
-  const [txSnap,fineSnap]=await Promise.all([
-    db.collection('transactions').where('memberId','==',uid).orderBy('date','desc').get().catch(()=>({docs:[]})),
-    db.collection('fines').where('memberId','==',uid).get().catch(()=>({docs:[]})),
-  ]);
-  const txs=txSnap.docs.map(d=>({id:d.id,...d.data()}));
-  const fines=fineSnap.docs.map(d=>({id:d.id,...d.data()}));
-  const paid=txs.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
-  const pFines=fines.filter(f=>f.status==='pending').reduce((a,f)=>a+f.amount,0);
-  c.innerHTML=`
-    <div class="pageTitle"><span>💰</span>My Fees & Payments</div>
-    ${pFines>0?`<div class="dueAlert">⚠️ तपाईको  ${fmt(pFines)} fine tirna baki cha!</div>`:''}
-    <div class="statsGrid">
-      <div class="statCard"><div class="sIcon">✅</div><div class="sVal" style="color:#4ade80">${fmt(paid)}</div><div class="sLabel">Total Paid</div></div>
-      <div class="statCard"><div class="sIcon">⚠️</div><div class="sVal" style="color:#f87171">${fmt(pFines)}</div><div class="sLabel">Pending Fines</div></div>
-      <div class="statCard"><div class="sIcon">📋</div><div class="sVal">${txs.length}</div><div class="sLabel">Transactions</div></div>
-    </div>
-    <div class="card">
-      <div class="cardHead">Transaction History</div>
-      <div class="tableWrap"><table>
-        <thead><tr><th>Date (BS)</th><th>Category</th><th>Method</th><th>Amount</th></tr></thead>
-        <tbody>${txs.length===0?`<tr><td colspan="4" class="empty">कुनै पनिtransaction छैन</td></tr>`:
-          txs.map(t=>`<tr>
-            <td>${t.dateBS||NepaliDate.convert(new Date(t.date||Date.now())).str}</td>
-            <td>${t.category||'—'}</td>
-            <td>${t.method||'Cash'}</td>
-            <td style="font-weight:800;color:${t.type==='income'?'#4ade80':'#f87171'}">${fmt(t.amount)}</td>
+  c.innerHTML=`<div class="pageTitle"><span>📒</span>My Passbook</div><div style="text-align:center;padding:40px"><div style="width:36px;height:36px;border:3px solid rgba(245,158,11,.2);border-top:3px solid var(--gold);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto"></div></div>`;
+  try{
+    const [txSnap,fineSnap,savSnap,loanSnap]=await Promise.all([
+      db.collection('transactions').where('memberId','==',uid).get().catch(()=>({docs:[]})),
+      db.collection('fines').where('memberId','==',uid).get().catch(()=>({docs:[]})),
+      db.collection('savings').where('memberId','==',uid).get().catch(()=>({docs:[]})),
+      db.collection('loans').where('memberId','==',uid).get().catch(()=>({docs:[]})),
+    ]);
+    const txs=txSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'0')>(a.date||'0')?1:-1);
+    const fines=fineSnap.docs.map(d=>({id:d.id,...d.data()}));
+    const savs=savSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'0')>(a.date||'0')?1:-1);
+    const loans=loanSnap.docs.map(d=>({id:d.id,...d.data()}));
+    const totalPaid=txs.filter(t=>t.type==='income').reduce((a,t)=>a+(t.amount||0),0);
+    const totalSav=savs.reduce((a,s)=>a+(s.amount||0),0);
+    const loanDue=loans.filter(l=>l.status!=='paid').reduce((a,l)=>a+(l.remaining||0),0);
+    const pendFines=fines.filter(f=>f.status==='pending').reduce((a,f)=>a+(f.amount||0),0);
+    c.innerHTML=`
+      <div class="pageTitle"><span>📒</span>My Passbook</div>
+      <div class="statsGrid">
+        <div class="statCard"><div class="sIcon">✅</div><div class="sVal" style="color:#4ade80">${fmt(totalPaid)}</div><div class="sLabel">Total Paid</div></div>
+        <div class="statCard"><div class="sIcon">🐷</div><div class="sVal" style="color:#34d399">${fmt(totalSav)}</div><div class="sLabel">Total Savings</div></div>
+        <div class="statCard"><div class="sIcon">🏦</div><div class="sVal" style="color:#f87171">${fmt(loanDue)}</div><div class="sLabel">Loan Due</div></div>
+        <div class="statCard"><div class="sIcon">⚠️</div><div class="sVal" style="color:#fbbf24">${fmt(pendFines)}</div><div class="sLabel">Fines Due</div></div>
+      </div>
+      <!-- Savings -->
+      <div class="card" style="margin-bottom:14px">
+        <div class="cardHead">🐷 Savings History</div>
+        <div class="tableWrap"><table>
+          <thead><tr><th>Date (BS)</th><th>Amount</th><th>Method</th><th>Note</th></tr></thead>
+          <tbody>${savs.length===0?`<tr><td colspan="4" class="empty">कुनै savings छैन</td></tr>`:
+            savs.map(s=>`<tr>
+              <td style="color:var(--gold)">${s.dateBS||NepaliDate.convert(new Date(s.date||Date.now())).str}</td>
+              <td style="font-weight:800;color:#34d399">${fmt(s.amount)}</td>
+              <td>${s.method||'Cash'}</td>
+              <td>${s.note||'—'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>
+      </div>
+      <!-- Loans -->
+      ${loans.length>0?`<div class="card" style="margin-bottom:14px">
+        <div class="cardHead">🏦 Loan History</div>
+        <div class="tableWrap"><table>
+          <thead><tr><th>Amount</th><th>Remaining</th><th>Rate</th><th>Date</th><th>Status</th></tr></thead>
+          <tbody>${loans.map(l=>`<tr>
+            <td style="font-weight:700">${fmt(l.amount)}</td>
+            <td style="color:#f87171;font-weight:700">${fmt(l.remaining??l.amount)}</td>
+            <td>${l.rate||0}%/mo</td>
+            <td>${l.issueDate||'—'}</td>
+            <td><span class="tag ${l.status==='paid'?'paid':l.status==='partial'?'pending':'loan'}">${l.status||'active'}</span></td>
           </tr>`).join('')}
-        </tbody>
-      </table></div>
-    </div>
-    <div class="card">
-      <div class="cardHead">My Fines</div>
-      <div class="tableWrap"><table>
-        <thead><tr><th>Reason</th><th>Amount</th><th>Date (BS)</th><th>Status</th></tr></thead>
-        <tbody>${fines.length===0?`<tr><td colspan="4" class="empty">कुनै पनिfine छैन 🎉</td></tr>`:
-          fines.map(f=>`<tr>
+          </tbody>
+        </table></div>
+      </div>`:''}
+      <!-- Fines -->
+      ${fines.length>0?`<div class="card" style="margin-bottom:14px">
+        <div class="cardHead">⚠️ Fines</div>
+        <div class="tableWrap"><table>
+          <thead><tr><th>Reason</th><th>Amount</th><th>Date</th><th>Status</th></tr></thead>
+          <tbody>${fines.map(f=>`<tr>
             <td>${f.reason||'—'}</td>
-            <td style="font-weight:800;color:#fbbf24">${fmt(f.amount)}</td>
+            <td style="color:#fbbf24;font-weight:700">${fmt(f.amount)}</td>
             <td>${f.dateBS||f.date||'—'}</td>
             <td><span class="tag ${f.status==='paid'?'paid':'pending'}">${f.status||'pending'}</span></td>
           </tr>`).join('')}
-        </tbody>
-      </table></div>
-    </div>`;
-}
-
-// ====== MY LOANS ======
-async function viewLoanHistory(loanId,name){
-  const snap=await db.collection('loans').doc(loanId).collection('payments').get().catch(()=>({docs:[]}));
-  const payments=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'')>(a.date||'')?1:-1);
-  const modal=document.createElement('div');
-  modal.className='modalOverlay';
-  modal.innerHTML=`<div class="modalCard" style="max-width:560px">
-    <h2>💳 ${name} — Payment History</h2>
-    <div class="tableWrap"><table>
-      <thead><tr><th>Date (BS)</th><th>Total</th><th>Principal</th><th>Interest</th><th>Method</th><th>Remaining</th></tr></thead>
-      <tbody>${payments.length===0?`<tr><td colspan="6" class="empty">कुनै पनिpayment छैन</td></tr>`:
-        payments.map(p=>`<tr>
-          <td>${p.dateBS||p.date||'—'}</td>
-          <td style="font-weight:800;color:#4ade80">${fmt(p.amount)}</td>
-          <td>${fmt(p.principal||p.amount)}</td>
-          <td style="color:#fbbf24">${fmt(p.interest||0)}</td>
-          <td>${p.method||'Cash'}</td>
-          <td style="color:#f87171">${fmt(p.remaining||0)}</td>
-        </tr>`).join('')}
-      </tbody>
-    </table></div>
-    <div class="modalActions"><button class="btnGhost" onclick="this.closest('.modalOverlay').remove()">Close</button></div>
-  </div>`;
-  document.body.appendChild(modal);
+          </tbody>
+        </table></div>
+      </div>`:''}
+      <!-- All Transactions -->
+      <div class="card">
+        <div class="cardHead">💳 All Transactions</div>
+        <div class="tableWrap"><table>
+          <thead><tr><th>Date (BS)</th><th>Category</th><th>Amount</th><th>Method</th></tr></thead>
+          <tbody>${txs.length===0?`<tr><td colspan="4" class="empty">कुनै transaction छैन</td></tr>`:
+            txs.map(t=>`<tr>
+              <td style="color:var(--gold)">${t.dateBS||NepaliDate.convert(new Date(t.date||Date.now())).str}</td>
+              <td>${t.category||'—'}</td>
+              <td style="font-weight:800;color:${t.type==='income'?'#4ade80':'#f87171'}">${fmt(t.amount)}</td>
+              <td>${t.method||'Cash'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>
+      </div>`;
+  }catch(e){
+    c.innerHTML=`<div class="pageTitle"><span>📒</span>My Passbook</div><div class="card"><div class="empty">Error: ${e.message}</div></div>`;
+  }
 }
 
 async function renderMyLoans(){
@@ -2649,8 +2657,17 @@ async function renderMyLoans(){
 async function renderMySavings(){
   const c=document.getElementById('mainContent');
   const snap=await db.collection('savings').where('memberId','==',currentUser.uid).get().catch(()=>({docs:[]}));
-  const savs=snap.docs.map(d=>({id:d.id,...d.data()}));
-  const total=savs.reduce((a,s)=>a+s.amount,0);
+  const savs=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'0')>(a.date||'0')?1:-1);
+  const total=savs.reduce((a,s)=>a+(s.amount||0),0);
+  // Monthly grouping
+  const monthly={};
+  savs.forEach(s=>{
+    const m=(s.date||'').substring(0,7);
+    if(!m)return;
+    if(!monthly[m])monthly[m]=0;
+    monthly[m]+=s.amount||0;
+  });
+  const monthKeys=Object.keys(monthly).sort().reverse();
   c.innerHTML=`
     <div class="pageTitle"><span>🐷</span>My Savings</div>
     <div class="statsGrid" style="grid-template-columns:repeat(2,1fr);max-width:320px">
@@ -3365,348 +3382,6 @@ async function checkBirthdays(){
     const snap=await db.collection('users').where('role','==','member').get();
     snap.docs.forEach(d=>{const m=d.data();if(m.birthday&&m.birthday.substring(5)===today){toast(`🎂 आज ${m.name} को जन्मदिन हो!`,'info');addNotif(`🎂 आज ${m.name} को जन्मदिन हो! Happy Birthday! 🎉`,'success','all');}});
   }catch(e){}
-}
-
-// ====== MEETING ATTENDANCE ======
-async function renderAttendance(){
-  const c=document.getElementById('mainContent');
-  c.innerHTML=`<div class="pageTitle"><span>✅</span>Meeting Attendance</div><div style="text-align:center;padding:40px"><div style="width:36px;height:36px;border:3px solid rgba(245,158,11,.2);border-top:3px solid var(--gold);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto"></div></div>`;
-  try{
-    const [mSnap,attSnap,meetSnap]=await Promise.all([
-      db.collection('users').where('role','==','member').get(),
-      db.collection('meetingAttendance').orderBy('date','desc').get().catch(()=>({docs:[]})),
-      db.collection('meetings').orderBy('date','desc').limit(20).get().catch(()=>({docs:[]})),
-    ]);
-    const members=mSnap.docs.map(d=>({id:d.id,...d.data()}));
-    const atts=attSnap.docs.map(d=>({id:d.id,...d.data()}));
-    const meetings=meetSnap.docs.map(d=>({id:d.id,...d.data()}));
-    // Group attendance by meeting
-    const byMeeting={};
-    atts.forEach(a=>{
-      if(!byMeeting[a.meetingId]) byMeeting[a.meetingId]={present:[],absent:[]};
-      if(a.present) byMeeting[a.meetingId].present.push(a.memberId);
-      else byMeeting[a.meetingId].absent.push(a.memberId);
-    });
-    // Per-member attendance count
-    const memberAtt={};
-    members.forEach(m=>{memberAtt[m.id]={name:m.name,present:0,absent:0,total:0};});
-    atts.forEach(a=>{
-      if(memberAtt[a.memberId]){
-        memberAtt[a.memberId].total++;
-        if(a.present) memberAtt[a.memberId].present++;
-        else memberAtt[a.memberId].absent++;
-      }
-    });
-    const today=todayStr();
-    c.innerHTML=`
-      <div class="pageTitle"><span>✅</span>Meeting Attendance</div>
-      <!-- Mark Attendance -->
-      <div class="formCard" style="margin-bottom:16px">
-        <div class="cardHead">📋 आजको उपस्थिति Mark गर्नुहोस्</div>
-        <div style="padding:16px">
-          <div class="formGrid" style="padding:0;margin-bottom:12px">
-            <div class="field"><label>Meeting Title</label><input id="attTitle" placeholder="Monthly Meeting — Baisakh 2082"/></div>
-            <div class="field"><label>Date</label><input type="date" id="attDate" value="${today}"/></div>
-          </div>
-          <div style="margin-bottom:12px;font-size:12px;font-weight:700;color:var(--text2)">Members (✓ = Present):</div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:14px">
-            ${members.map(m=>`<label style="display:flex;align-items:center;gap:10px;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer;transition:all .2s" id="attLabel_${m.id}">
-              <input type="checkbox" id="att_${m.id}" checked onchange="document.getElementById('attLabel_${m.id}').style.background=this.checked?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.08)';document.getElementById('attLabel_${m.id}').style.borderColor=this.checked?'#10b981':'#ef4444'" style="width:16px;height:16px;accent-color:#10b981"/>
-              <span style="font-size:13px;font-weight:600">${m.name||'—'}</span>
-            </label>`).join('')}
-          </div>
-          <button class="btnSm" onclick="saveAttendance()">💾 Save Attendance</button>
-        </div>
-      </div>
-      <!-- Summary Table -->
-      <div class="card" style="margin-bottom:14px">
-        <div class="cardHead">📊 Member-wise Attendance Summary</div>
-        <div class="tableWrap"><table>
-          <thead><tr><th>Member</th><th>Present</th><th>Absent</th><th>Total</th><th>Rate</th></tr></thead>
-          <tbody>${members.length===0?`<tr><td colspan="5" class="empty">कुनै member छैन</td></tr>`:
-            members.map(m=>{
-              const a=memberAtt[m.id]||{present:0,absent:0,total:0};
-              const rate=a.total>0?Math.round(a.present/a.total*100):100;
-              const rc=rate>=75?'#10b981':rate>=50?'#f59e0b':'#ef4444';
-              return`<tr>
-                <td style="font-weight:700">${m.name||'—'}</td>
-                <td style="color:#10b981;font-weight:700">${a.present}</td>
-                <td style="color:#ef4444;font-weight:700">${a.absent}</td>
-                <td>${a.total}</td>
-                <td><span style="background:${rc}22;color:${rc};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:800">${rate}%</span></td>
-              </tr>`;}).join('')}
-          </tbody>
-        </table></div>
-      </div>
-      <!-- Meeting History -->
-      ${meetings.length>0?`<div class="card">
-        <div class="cardHead">📅 Meeting History</div>
-        <div class="tableWrap"><table>
-          <thead><tr><th>Meeting</th><th>Date (BS)</th><th>Present</th><th>Absent</th></tr></thead>
-          <tbody>${meetings.map(m=>{
-            const att=byMeeting[m.id]||{present:[],absent:[]};
-            return`<tr>
-              <td style="font-weight:600">${m.title||'Meeting'}</td>
-              <td>${m.dateBS||NepaliDate.convert(new Date(m.date||Date.now())).str}</td>
-              <td style="color:#10b981;font-weight:700">${att.present.length}</td>
-              <td style="color:#ef4444;font-weight:700">${att.absent.length}</td>
-            </tr>`;}).join('')}
-          </tbody>
-        </table></div>
-      </div>`:''}`;
-    window.saveAttendance=async()=>{
-      const title=document.getElementById('attTitle').value.trim();
-      const date=document.getElementById('attDate').value;
-      if(!title){toast('Meeting title haalnuhos!','error');return;}
-      const dateBS=NepaliDate.convert(new Date(date)).str;
-      // Save meeting
-      const mRef=await db.collection('meetings').add({title,date,dateBS,createdAt:firebase.firestore.FieldValue.serverTimestamp(),by:currentUser.uid});
-      // Save attendance for each member
-      const batch=db.batch();
-      members.forEach(m=>{
-        const present=document.getElementById('att_'+m.id)?.checked||false;
-        const ref=db.collection('meetingAttendance').doc();
-        batch.set(ref,{meetingId:mRef.id,memberId:m.id,memberName:m.name,present,date,dateBS,title,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
-      });
-      await batch.commit();
-      // Auto fine absent members
-      const absentMembers=members.filter(m=>!document.getElementById('att_'+m.id)?.checked);
-      if(absentMembers.length>0){
-        const autoFine=confirm(`${absentMembers.length} जना absent छन्। Auto-fine लगाउने? (Rs. 50 each)`);
-        if(autoFine){
-          const fb=db.batch();
-          absentMembers.forEach(m=>{
-            const ref=db.collection('fines').doc();
-            fb.set(ref,{memberId:m.id,memberName:m.name,amount:50,category:'attendance',reason:`Absent: ${title}`,date,dateBS,status:'pending',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
-          });
-          await fb.commit();
-          toast(`Attendance saved! ${absentMembers.length} जनालाई Rs.50 fine.`);
-        } else toast('Attendance saved!');
-      } else toast('Attendance saved! सबै present 🎉');
-      renderAttendance();
-    };
-  }catch(e){c.innerHTML=`<div class="pageTitle"><span>✅</span>Attendance</div><div class="card"><div class="empty">Error: ${e.message}</div></div>`;}
-}
-
-// ====== GROUP FUND CALCULATOR ======
-async function renderGroupFund(){
-  const c=document.getElementById('mainContent');
-  c.innerHTML=`<div class="pageTitle"><span>💰</span>Group Fund</div><div style="text-align:center;padding:40px"><div style="width:36px;height:36px;border:3px solid rgba(245,158,11,.2);border-top:3px solid var(--gold);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto"></div></div>`;
-  try{
-    const [txSnap,lSnap,sSnap,mSnap]=await Promise.all([
-      db.collection('transactions').get(),
-      db.collection('loans').get(),
-      db.collection('savings').get(),
-      db.collection('users').where('role','==','member').get(),
-    ]);
-    const txs=txSnap.docs.map(d=>d.data());
-    const loans=lSnap.docs.map(d=>d.data());
-    const savs=sSnap.docs.map(d=>d.data());
-    const members=mSnap.docs.map(d=>({id:d.id,...d.data()}));
-    const totalInc=txs.filter(t=>t.type==='income').reduce((a,t)=>a+(t.amount||0),0);
-    const totalExp=txs.filter(t=>t.type==='expense').reduce((a,t)=>a+(t.amount||0),0);
-    const netFund=totalInc-totalExp;
-    const totalLoaned=loans.filter(l=>l.status!=='paid').reduce((a,l)=>a+(l.remaining||0),0);
-    const totalSav=savs.reduce((a,s)=>a+(s.amount||0),0);
-    const perMember=members.length>0?Math.floor(netFund/members.length):0;
-    const perMemberAfterLoan=members.length>0?Math.floor((netFund-totalLoaned)/members.length):0;
-    c.innerHTML=`
-      <div class="pageTitle"><span>💰</span>Group Fund Calculator</div>
-      <!-- Summary Cards -->
-      <div class="statsGrid" style="margin-bottom:16px">
-        <div class="statCard" style="background:linear-gradient(135deg,rgba(16,185,129,0.1),rgba(5,150,105,0.05));border-color:rgba(16,185,129,0.3)">
-          <div class="sIcon">💰</div><div class="sVal" style="color:#10b981">${fmt(netFund)}</div><div class="sLabel">Net Fund (Total)</div>
-        </div>
-        <div class="statCard" style="background:linear-gradient(135deg,rgba(239,68,68,0.1),rgba(220,38,38,0.05));border-color:rgba(239,68,68,0.3)">
-          <div class="sIcon">🏦</div><div class="sVal" style="color:#f87171">${fmt(totalLoaned)}</div><div class="sLabel">Loan Outstanding</div>
-        </div>
-        <div class="statCard" style="background:linear-gradient(135deg,rgba(99,102,241,0.1),rgba(79,70,229,0.05));border-color:rgba(99,102,241,0.3)">
-          <div class="sIcon">👥</div><div class="sVal" style="color:#818cf8">${members.length}</div><div class="sLabel">Members</div>
-        </div>
-        <div class="statCard" style="background:linear-gradient(135deg,rgba(245,158,11,0.1),rgba(217,119,6,0.05));border-color:rgba(245,158,11,0.3)">
-          <div class="sIcon">🐷</div><div class="sVal" style="color:var(--gold)">${fmt(totalSav)}</div><div class="sLabel">Total Savings</div>
-        </div>
-      </div>
-      <!-- Distribution Calculator -->
-      <div class="card" style="margin-bottom:16px">
-        <div class="cardHead">🔢 Per-Member Distribution Calculator</div>
-        <div style="padding:18px">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
-            <div style="background:var(--card2);border-radius:12px;padding:16px;border:1px solid var(--border);text-align:center">
-              <div style="font-size:11px;color:var(--text2);font-weight:700;text-transform:uppercase;margin-bottom:6px">Full Distribution</div>
-              <div style="font-size:24px;font-weight:900;color:#10b981">${fmt(perMember)}</div>
-              <div style="font-size:11px;color:var(--text2);margin-top:4px">प्रति सदस्य (Net Fund ÷ ${members.length})</div>
-            </div>
-            <div style="background:var(--card2);border-radius:12px;padding:16px;border:1px solid var(--border);text-align:center">
-              <div style="font-size:11px;color:var(--text2);font-weight:700;text-transform:uppercase;margin-bottom:6px">After Loan Recovery</div>
-              <div style="font-size:24px;font-weight:900;color:${perMemberAfterLoan>=0?'#60a5fa':'#f87171'}">${fmt(perMemberAfterLoan)}</div>
-              <div style="font-size:11px;color:var(--text2);margin-top:4px">Loan काटेपछि प्रति सदस्य</div>
-            </div>
-          </div>
-          <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:10px;padding:12px 14px;font-size:12px;color:var(--text2)">
-            💡 Custom distribution calculator:
-            <div style="display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap">
-              <div class="field" style="margin:0;flex:1;min-width:120px"><label>बाँड्ने रकम (Rs.)</label><input type="number" id="distAmt" placeholder="${netFund}" oninput="calcDist()"/></div>
-              <div class="field" style="margin:0;flex:1;min-width:100px"><label>Members</label><input type="number" id="distMembers" value="${members.length}" oninput="calcDist()"/></div>
-              <div style="text-align:center;min-width:120px">
-                <div style="font-size:11px;color:var(--text2);margin-bottom:4px">Per Member</div>
-                <div id="distResult" style="font-size:20px;font-weight:900;color:#10b981">—</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <!-- Member-wise Savings -->
-      <div class="card">
-        <div class="cardHead">👤 Member-wise Fund Contribution</div>
-        <div class="tableWrap"><table>
-          <thead><tr><th>Member</th><th>Savings</th><th>Loan Due</th><th>Net Contribution</th></tr></thead>
-          <tbody>${members.map(m=>{
-            const ms=savs.filter(s=>s.memberId===m.id).reduce((a,s)=>a+(s.amount||0),0);
-            const ml=loans.filter(l=>l.memberId===m.id&&l.status!=='paid').reduce((a,l)=>a+(l.remaining||0),0);
-            const net=ms-ml;
-            return`<tr>
-              <td style="font-weight:700">${m.name||'—'}</td>
-              <td style="color:#10b981;font-weight:700">${fmt(ms)}</td>
-              <td style="color:#f87171;font-weight:700">${fmt(ml)}</td>
-              <td style="color:${net>=0?'#60a5fa':'#f87171'};font-weight:800">${fmt(net)}</td>
-            </tr>`;}).join('')}
-          </tbody>
-        </table></div>
-      </div>`;
-    window.calcDist=()=>{
-      const amt=Number(document.getElementById('distAmt').value)||netFund;
-      const mem=Number(document.getElementById('distMembers').value)||members.length;
-      const per=mem>0?Math.floor(amt/mem):0;
-      document.getElementById('distResult').textContent=fmt(per);
-    };
-  }catch(e){c.innerHTML=`<div class="pageTitle"><span>💰</span>Group Fund</div><div class="card"><div class="empty">Error: ${e.message}</div></div>`;}
-}
-
-// ====== MEMBER PASSBOOK PDF ======
-async function renderPassbook(){
-  const c=document.getElementById('mainContent');
-  c.innerHTML=`<div class="pageTitle"><span>📒</span>My Passbook</div><div style="text-align:center;padding:40px"><div style="width:36px;height:36px;border:3px solid rgba(245,158,11,.2);border-top:3px solid var(--gold);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto"></div></div>`;
-  try{
-    const uid=currentUser.uid;
-    const d=currentUserData||{};
-    const [txSnap,lSnap,sSnap,fSnap]=await Promise.all([
-      db.collection('transactions').where('memberId','==',uid).orderBy('date','desc').get().catch(()=>({docs:[]})),
-      db.collection('loans').where('memberId','==',uid).get().catch(()=>({docs:[]})),
-      db.collection('savings').where('memberId','==',uid).orderBy('date','desc').get().catch(()=>({docs:[]})),
-      db.collection('fines').where('memberId','==',uid).get().catch(()=>({docs:[]})),
-    ]);
-    const txs=txSnap.docs.map(d=>({id:d.id,...d.data()}));
-    const loans=lSnap.docs.map(d=>({id:d.id,...d.data()}));
-    const savs=sSnap.docs.map(d=>({id:d.id,...d.data()}));
-    const fines=fSnap.docs.map(d=>({id:d.id,...d.data()}));
-    const totalPaid=txs.filter(t=>t.type==='income').reduce((a,t)=>a+(t.amount||0),0);
-    const loanDue=loans.filter(l=>l.status!=='paid').reduce((a,l)=>a+(l.remaining||0),0);
-    const totalSav=savs.reduce((a,s)=>a+(s.amount||0),0);
-    const pendFines=fines.filter(f=>f.status==='pending').reduce((a,f)=>a+(f.amount||0),0);
-    c.innerHTML=`
-      <div class="pageTitle"><span>📒</span>My Passbook</div>
-      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
-        <button class="btnSm" onclick="printPassbook()">🖨️ Print / Download PDF</button>
-      </div>
-      <!-- Summary -->
-      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px" id="pbSummary">
-        <div style="border-radius:14px;padding:16px;background:linear-gradient(135deg,#065f46,#047857);box-shadow:0 6px 20px rgba(4,120,87,0.3)">
-          <div style="font-size:10px;color:rgba(255,255,255,0.7);font-weight:700;text-transform:uppercase">Total Paid</div>
-          <div style="font-size:22px;font-weight:900;color:#fff;margin-top:4px">${fmt(totalPaid)}</div>
-        </div>
-        <div style="border-radius:14px;padding:16px;background:linear-gradient(135deg,#7f1d1d,#991b1b);box-shadow:0 6px 20px rgba(153,27,27,0.3)">
-          <div style="font-size:10px;color:rgba(255,255,255,0.7);font-weight:700;text-transform:uppercase">Loan Due</div>
-          <div style="font-size:22px;font-weight:900;color:#fff;margin-top:4px">${fmt(loanDue)}</div>
-        </div>
-        <div style="border-radius:14px;padding:16px;background:linear-gradient(135deg,#1e3a5f,#1d4ed8);box-shadow:0 6px 20px rgba(29,78,216,0.3)">
-          <div style="font-size:10px;color:rgba(255,255,255,0.7);font-weight:700;text-transform:uppercase">Total Savings</div>
-          <div style="font-size:22px;font-weight:900;color:#fff;margin-top:4px">${fmt(totalSav)}</div>
-        </div>
-        <div style="border-radius:14px;padding:16px;background:linear-gradient(135deg,#78350f,#b45309);box-shadow:0 6px 20px rgba(180,83,9,0.3)">
-          <div style="font-size:10px;color:rgba(255,255,255,0.7);font-weight:700;text-transform:uppercase">Pending Fines</div>
-          <div style="font-size:22px;font-weight:900;color:#fff;margin-top:4px">${fmt(pendFines)}</div>
-        </div>
-      </div>
-      <!-- All Transactions -->
-      <div class="card" style="margin-bottom:12px">
-        <div class="cardHead">📋 Transaction History (${txs.length} records)</div>
-        <div class="tableWrap"><table>
-          <thead><tr><th>Date (BS)</th><th>Category</th><th>Method</th><th>Amount</th></tr></thead>
-          <tbody>${txs.length===0?`<tr><td colspan="4" class="empty">कुनै transaction छैन</td></tr>`:
-            txs.map(t=>`<tr>
-              <td>${t.dateBS||NepaliDate.convert(new Date(t.date||Date.now())).str}</td>
-              <td>${t.category||'—'}</td>
-              <td>${t.method||'Cash'}</td>
-              <td style="font-weight:800;color:${t.type==='income'?'#4ade80':'#f87171'}">${fmt(t.amount)}</td>
-            </tr>`).join('')}
-          </tbody>
-        </table></div>
-      </div>
-      <!-- Loans -->
-      ${loans.length>0?`<div class="card" style="margin-bottom:12px">
-        <div class="cardHead">🏦 Loan Records</div>
-        <div class="tableWrap"><table>
-          <thead><tr><th>Amount</th><th>Remaining</th><th>Rate</th><th>Issue (BS)</th><th>Due (BS)</th><th>Status</th></tr></thead>
-          <tbody>${loans.map(l=>`<tr>
-            <td style="font-weight:700">${fmt(l.amount)}</td>
-            <td style="color:#f87171;font-weight:700">${fmt(l.remaining??l.amount)}</td>
-            <td>${l.rate||0}%/mo</td>
-            <td>${l.issueDate?NepaliDate.convert(new Date(l.issueDate)).str:'—'}</td>
-            <td>${l.dueDate?NepaliDate.convert(new Date(l.dueDate)).str:'—'}</td>
-            <td><span class="tag ${l.status==='paid'?'paid':'loan'}">${l.status||'active'}</span></td>
-          </tr>`).join('')}
-          </tbody>
-        </table></div>
-      </div>`:''}`;
-    window.printPassbook=()=>{
-      const w=window.open('','_blank');
-      w.document.write(`<!DOCTYPE html><html><head><title>Passbook — ${d.name||''}</title>
-        <style>
-          body{font-family:Arial,sans-serif;padding:30px;max-width:700px;margin:0 auto;color:#111}
-          h1{text-align:center;border-bottom:2px solid #333;padding-bottom:8px;margin-bottom:4px}
-          h3{color:#333;margin:16px 0 8px}
-          .info{display:grid;grid-template-columns:1fr 1fr;gap:8px;background:#f5f5f5;padding:12px;border-radius:8px;margin:12px 0;font-size:13px}
-          .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}
-          .box{padding:10px;border:1px solid #ddd;border-radius:6px;text-align:center}
-          .box .v{font-size:14px;font-weight:800}.box .l{font-size:9px;color:#888;text-transform:uppercase}
-          table{width:100%;border-collapse:collapse;margin:8px 0;font-size:12px}
-          td,th{padding:7px 10px;border:1px solid #ddd;text-align:left}
-          th{background:#f5f5f5;font-weight:700;font-size:11px}
-          .footer{text-align:center;margin-top:30px;font-size:11px;color:#888;border-top:1px solid #ddd;padding-top:10px}
-          @media print{button{display:none}}
-        </style>
-      </head><body>
-        <h1>🏦 दाजुभाइ समूह — सदस्य पासबुक</h1>
-        <p style="text-align:center;color:#888;font-size:12px">Dhanjugaon, Bhaktapur | ESTD 2025</p>
-        <button onclick="window.print()" style="display:block;margin:10px auto;padding:8px 20px;background:#16a34a;color:#fff;border:none;border-radius:6px;cursor:pointer">🖨️ Print</button>
-        <div class="info">
-          <div><b>नाम:</b> ${d.name||'—'}</div>
-          <div><b>Member ID:</b> ${d.memberId||'—'}</div>
-          <div><b>Phone:</b> ${d.phone||'—'}</div>
-          <div><b>Email:</b> ${d.email||'—'}</div>
-          <div><b>भर्ना:</b> ${d.joinDateNP||d.joinDate||'—'}</div>
-          <div><b>Generated:</b> ${NepaliDate.convert(new Date()).str}</div>
-        </div>
-        <div class="summary">
-          <div class="box"><div class="v">${fmt(totalPaid)}</div><div class="l">Total Paid</div></div>
-          <div class="box"><div class="v">${fmt(loanDue)}</div><div class="l">Loan Due</div></div>
-          <div class="box"><div class="v">${fmt(totalSav)}</div><div class="l">Savings</div></div>
-          <div class="box"><div class="v">${fmt(pendFines)}</div><div class="l">Fines</div></div>
-        </div>
-        <h3>Transaction History</h3>
-        <table><tr><th>Date (BS)</th><th>Category</th><th>Method</th><th>Amount</th></tr>
-          ${txs.map(t=>`<tr><td>${t.dateBS||NepaliDate.convert(new Date(t.date||Date.now())).str}</td><td>${t.category||'—'}</td><td>${t.method||'Cash'}</td><td>${fmt(t.amount)}</td></tr>`).join('')}
-        </table>
-        ${loans.length>0?`<h3>Loan Records</h3>
-        <table><tr><th>Amount</th><th>Remaining</th><th>Rate</th><th>Issue Date (BS)</th><th>Status</th></tr>
-          ${loans.map(l=>`<tr><td>${fmt(l.amount)}</td><td>${fmt(l.remaining??l.amount)}</td><td>${l.rate||0}%/mo</td><td>${l.issueDate?NepaliDate.convert(new Date(l.issueDate)).str:'—'}</td><td>${l.status||'active'}</td></tr>`).join('')}
-        </table>`:''}
-        <div class="footer">यो पासबुक दाजुभाइ समूह Finance System द्वारा generate गरिएको हो।<br/>Dhanjugaon, Bhaktapur | ${NepaliDate.convert(new Date()).str}</div>
-      </body></html>`);
-      w.document.close();
-    };
-  }catch(e){c.innerHTML=`<div class="pageTitle"><span>📒</span>Passbook</div><div class="card"><div class="empty">Error: ${e.message}</div></div>`;}
 }
 
 // ====== ANNUAL REPORT ======
