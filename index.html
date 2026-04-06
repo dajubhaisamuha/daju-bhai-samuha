@@ -2094,18 +2094,34 @@ async function renderFines(){
 async function renderInterest(){
   const c=document.getElementById('mainContent');
   async function load(){
-    const [lSnap,pmSnap]=await Promise.all([
+    const [lSnap,txSnap]=await Promise.all([
       db.collection('loans').get().catch(()=>({docs:[]})),
-      db.collection('loans').get().catch(()=>({docs:[]})),
+      db.collection('transactions').where('category','==','Loan Interest').get().catch(()=>({docs:[]})),
     ]);
-    // Get all payment subcollections
     const loans=lSnap.docs.map(d=>({id:d.id,...d.data()}));
-    // Fetch all payments for all loans
+    // Fetch all payments from loan subcollections
     const allPayments=[];
     await Promise.all(loans.map(async l=>{
       const ps=await db.collection('loans').doc(l.id).collection('payments').get().catch(()=>({docs:[]}));
-      ps.docs.forEach(p=>allPayments.push({...p.data(),loanId:l.id,memberName:l.memberName,memberId:l.memberId}));
+      ps.docs.forEach(p=>allPayments.push({...p.data(),loanId:l.id,memberName:l.memberName,memberId:l.memberId,_source:'payment'}));
     }));
+    // Also include Loan Interest transactions not already in payments
+    // (from pay request approval or direct entry where subcollection wasn't updated)
+    const txInterests=txSnap.docs.map(d=>({...d.data(),id:d.id,_source:'transaction'}));
+    // Merge: prefer subcollection data but add tx-only entries
+    const txDates=new Set(allPayments.map(p=>p.date+'_'+p.memberId));
+    txInterests.forEach(t=>{
+      const key=(t.date||'')+'_'+(t.memberId||'');
+      if(!txDates.has(key)){
+        allPayments.push({
+          memberName:t.memberName||'—',memberId:t.memberId||'',
+          interest:t.amount||0,principal:0,
+          date:t.date||'',dateBS:t.dateBS||'',
+          remaining:0,method:t.method||'—',
+          note:t.note||'',_source:'transaction'
+        });
+      }
+    });
     const totalInterest=allPayments.reduce((a,p)=>a+(p.interest||0),0);
     const totalPrincipal=allPayments.reduce((a,p)=>a+(p.principal||0),0);
     // Group by member
@@ -2122,13 +2138,13 @@ async function renderInterest(){
       <div class="statsGrid" style="grid-template-columns:repeat(3,1fr);max-width:480px;margin-bottom:16px">
         <div class="statCard"><div class="sIcon">💹</div><div class="sVal" style="color:#818cf8;font-size:16px">${fmt(totalInterest)}</div><div class="sLabel">Total Interest</div></div>
         <div class="statCard"><div class="sIcon">🏦</div><div class="sVal" style="color:#34d399;font-size:16px">${fmt(totalPrincipal)}</div><div class="sLabel">Principal Repaid</div></div>
-        <div class="statCard"><div class="sIcon">📋</div><div class="sVal" style="font-size:16px">${allPayments.length}</div><div class="sLabel">Payments</div></div>
+        <div class="statCard"><div class="sIcon">📋</div><div class="sVal" style="font-size:16px">${allPayments.length}</div><div class="sLabel">Records</div></div>
       </div>
       <div class="card" style="margin-bottom:16px">
         <div class="cardHead">Member-wise Interest</div>
         <div class="tableWrap"><table>
-          <thead><tr><th>Member</th><th>Interest Paid</th><th>Principal Paid</th><th>Payments</th></tr></thead>
-          <tbody>${Object.values(byMember).length===0?`<tr><td colspan="4" class="empty">कुनै repayment छैन</td></tr>`:
+          <thead><tr><th>Member</th><th>Interest Paid</th><th>Principal Paid</th><th>Records</th></tr></thead>
+          <tbody>${Object.values(byMember).length===0?`<tr><td colspan="4" class="empty">कुनै interest record छैन</td></tr>`:
             Object.values(byMember).sort((a,b)=>b.interest-a.interest).map(m=>`<tr>
               <td style="font-weight:700">${m.name}</td>
               <td style="color:#818cf8;font-weight:800">${fmt(m.interest)}</td>
@@ -2139,17 +2155,17 @@ async function renderInterest(){
         </table></div>
       </div>
       <div class="card">
-        <div class="cardHead">All Payments Detail</div>
+        <div class="cardHead">All Interest Records</div>
         <div class="tableWrap"><table>
-          <thead><tr><th>Member</th><th>Date (BS)</th><th>Total Paid</th><th>Principal</th><th>Interest</th><th>Remaining</th></tr></thead>
-          <tbody>${allPayments.length===0?`<tr><td colspan="6" class="empty">कुनै payment छैन</td></tr>`:
+          <thead><tr><th>Member</th><th>Date (BS)</th><th>Interest</th><th>Principal</th><th>Method</th><th>Source</th></tr></thead>
+          <tbody>${allPayments.length===0?`<tr><td colspan="6" class="empty">कुनै record छैन</td></tr>`:
             allPayments.sort((a,b)=>(b.date||'')>(a.date||'')?1:-1).map(p=>`<tr>
               <td style="font-weight:700">${p.memberName||'—'}</td>
-              <td>${p.dateBS||p.date||'—'}</td>
-              <td style="font-weight:800;color:#4ade80">${fmt((p.principal||0)+(p.interest||0))}</td>
-              <td>${fmt(p.principal||0)}</td>
-              <td style="color:#818cf8;font-weight:700">${fmt(p.interest||0)}</td>
-              <td style="color:#f87171">${fmt(p.remaining||0)}</td>
+              <td>${p.dateBS||NepaliDate.convert(new Date(p.date||Date.now())).str}</td>
+              <td style="color:#818cf8;font-weight:800">${fmt(p.interest||0)}</td>
+              <td style="color:#34d399">${fmt(p.principal||0)}</td>
+              <td>${p.method||'—'}</td>
+              <td style="font-size:10px;color:var(--text2)">${p._source==='transaction'?'TX':'Loan'}</td>
             </tr>`).join('')}
           </tbody>
         </table></div>
