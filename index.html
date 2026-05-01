@@ -1172,9 +1172,8 @@ async function addNotif(msg,type='info',target='all'){
 function listenNotifs(){
   if(!currentUser)return;
   // Listen to 'all' notifications
-  const q1=db.collection('notifications').where('target','==','all').orderBy('createdAt','desc').limit(20);
-  // Listen to user-specific notifications  
-  const q2=db.collection('notifications').where('target','==',currentUser.uid).orderBy('createdAt','desc').limit(20);
+  const q1=db.collection('notifications').where('target','==','all').limit(30);
+  const q2=db.collection('notifications').where('target','==',currentUser.uid).limit(30);
   
   let allNotifs=[];
   let userNotifs=[];
@@ -1851,9 +1850,10 @@ async function renderLoanRequests(){
               <td><span class="tag ${r.status==='approved'?'approved':r.status==='rejected'?'rejected':'pending'}">${r.status||'pending'}</span></td>
               <td style="display:flex;gap:6px">
                 ${r.status==='pending'?`
-                  <button class="btnSm" style="font-size:11px;padding:5px 10px" onclick="approveLoanReq('${r.id}','${r.memberId}','${r.memberName}',${r.amount})">✅ Approve</button>
-                  <button class="btnDanger" style="padding:5px 8px;font-size:11px" onclick="rejectLoanReq('${r.id}','${r.memberId}','${r.memberName}')">❌ Reject</button>
-                `:'—'}
+                  <button class="btnSm" style="font-size:11px;padding:5px 10px" onclick="approveLoanReq('${r.id}','${r.memberId}','${r.memberName}',${r.amount})">✅</button>
+                  <button class="btnDanger" style="padding:5px 8px;font-size:11px" onclick="rejectLoanReq('${r.id}','${r.memberId}','${r.memberName}')">❌</button>
+                `:''}
+                <button class="btnDanger" style="padding:5px 8px;font-size:11px" onclick="delPR('${r.id}')">🗑</button>
               </td>
             </tr>`).join('')}
           </tbody>
