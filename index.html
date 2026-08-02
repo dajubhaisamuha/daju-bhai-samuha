@@ -1745,13 +1745,21 @@ async function renderLoans(){
     toast('Loan add bhayo!');load();
   };
   window.repayLoan=async(id,name,remaining,memberId,rate)=>{
+    // Always get fresh remaining from Firebase
+    try{
+      const fresh=await db.collection('loans').doc(id).get();
+      if(fresh.exists)remaining=fresh.data().remaining??remaining;
+    }catch(e){}
     const amt=Number(prompt(`${name} le kati tiryo? (Remaining: Rs.${remaining})`));
     if(!amt||amt<=0)return;
     const method=prompt('Payment method? (Cash/eSewa/Bank/Khalti)')||'Cash';
-    // Full amount deducted - interest paid separately
-    const newRem=Math.max(0,remaining-amt);
-    const overpayment=amt>remaining?amt-remaining:0;
-    // Update loan
+    // Calculate principal vs interest split
+    const monthlyInterest=Math.round((remaining*(rate/100)));
+    const interest=Math.min(amt,monthlyInterest);
+    const principal=Math.max(0,amt-interest);
+    const newRem=Math.max(0,remaining-principal);
+    const overpayment=amt>(remaining+monthlyInterest)?amt-(remaining+monthlyInterest):0;
+    // Update loan remaining (only principal reduces loan)
     await db.collection('loans').doc(id).update({
       remaining:newRem,
       status:newRem===0?'paid':'partial',
@@ -1770,10 +1778,9 @@ async function renderLoans(){
       await db.collection('savings').add({memberId,memberName:name,amount:overpayment,method,date:todayStr(),dateBS:NepaliDate.convert(new Date()).str,note:'Loan overpayment auto-savings',createdAt:firebase.firestore.FieldValue.serverTimestamp()});
       await addNotif(`${name} le badi tireko ${fmt(overpayment)} savings ma rakiyo!`,'success',memberId);
     }
-    // Activity log
-    await logActivity('loan_repayment',`${name} le ${fmt(amt)} loan tiryo. Remaining: ${fmt(newRem)}`,{loanId:id,memberId,amount:amt});
+    await logActivity('loan_repayment',`${name} le ${fmt(amt)} tiryo. Principal:${fmt(principal)}, Interest:${fmt(interest)}, Remaining:${fmt(newRem)}`,{loanId:id,memberId,amount:amt});
     await addNotif(`${name} le ${fmt(amt)} loan tiryo! Remaining: ${fmt(newRem)}`,'success','all');
-    toast('Repayment recorded!');load();
+    toast(`Repayment recorded! Principal: ${fmt(principal)}, Interest: ${fmt(interest)}`);load();
   };
   window.delLoan=async id=>{if(!confirm('Delete?'))return;await db.collection('loans').doc(id).delete();toast('Deleted!','error');load();};
   window.printLoan=async(loan)=>{
